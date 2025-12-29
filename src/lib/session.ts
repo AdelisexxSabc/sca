@@ -60,7 +60,7 @@ export async function getOnlineUsersCount(timeoutMinutes = 30): Promise<number> 
   try {
     const sessions = await db.getAllActiveSessions(timeoutMinutes);
     // 去重，因为一个用户可能有多个会话
-    const uniqueUsers = new Set(sessions.map(s => s.username));
+    const uniqueUsers = new Set(sessions.map((s: UserSession) => s.username));
     return uniqueUsers.size;
   } catch (err) {
     console.error('获取在线用户数失败:', err);
@@ -72,7 +72,7 @@ export async function getOnlineUsersCount(timeoutMinutes = 30): Promise<number> 
 export async function getOnlineUsers(timeoutMinutes = 30): Promise<string[]> {
   try {
     const sessions = await db.getAllActiveSessions(timeoutMinutes);
-    const uniqueUsers = new Set(sessions.map(s => s.username));
+    const uniqueUsers = new Set<string>(sessions.map((s: UserSession) => s.username));
     return Array.from(uniqueUsers);
   } catch (err) {
     console.error('获取在线用户列表失败:', err);

@@ -3404,7 +3404,11 @@ const DataCenterComponent = () => {
       const data = await response.json();
       setStats(data);
     } catch (error) {
-      showAlert('error', '获取失败', (error as Error).message);
+      showAlert({
+        type: 'error',
+        title: '获取失败',
+        message: (error as Error).message,
+      });
     } finally {
       setLoading(false);
     }

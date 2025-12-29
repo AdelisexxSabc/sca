@@ -3,7 +3,16 @@
 import { Redis } from '@upstash/redis';
 
 import { AdminConfig } from './admin.types';
-import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
+import { 
+  Advertisement, 
+  ApiCallLog, 
+  Favorite, 
+  IStorage, 
+  PlayRecord, 
+  SkipConfig, 
+  UserMeta, 
+  UserSession 
+} from './types';
 
 // 搜索历史最大条数
 const SEARCH_HISTORY_LIMIT = 20;
@@ -342,6 +351,213 @@ export class UpstashRedisStorage implements IStorage {
     });
 
     return configs;
+  }
+
+  // ---------- 用户元数据 ----------
+  private userMetaKey(user: string) {
+    return `u:${user}:meta`;
+  }
+
+  async getUserMeta(userName: string): Promise<UserMeta | null> {
+    const val = await withRetry(() =>
+      this.client.get(this.userMetaKey(userName))
+    );
+    return val ? (val as UserMeta) : null;
+  }
+
+  async setUserMeta(userName: string, meta: UserMeta): Promise<void> {
+    await withRetry(() =>
+      this.client.set(this.userMetaKey(userName), meta)
+    );
+  }
+
+  // ---------- API调用日志 ----------
+  private apiCallLogsKey() {
+    return 'api:call:logs';
+  }
+
+  async addApiCallLog(log: ApiCallLog): Promise<void> {
+    const key = this.apiCallLogsKey();
+    const logStr = JSON.stringify(log);
+    
+    await withRetry(async () => {
+      // 使用sorted set存储，按时间戳排序
+      await this.client.zadd(key, {
+        score: log.timestamp,
+        member: logStr
+      });
+      
+      // 只保留最近1000条日志
+      const count = await this.client.zcard(key);
+      if (count > 1000) {
+        await this.client.zremrangebyrank(key, 0, count - 1001);
+      }
+    });
+  }
+
+  async getApiCallLogs(limit = 100): Promise<ApiCallLog[]> {
+    const key = this.apiCallLogsKey();
+    const logs = await withRetry(() =>
+      this.client.zrange(key, 0, limit - 1, { rev: true })
+    );
+    return logs.map((log) => JSON.parse(ensureString(log)) as ApiCallLog);
+  }
+
+  // ---------- 在线会话 ----------
+  private sessionKey(sessionId: string) {
+    return `session:${sessionId}`;
+  }
+
+  private activeSessionsKey() {
+    return 'sessions:active';
+  }
+
+  async setUserSession(session: UserSession): Promise<void> {
+    await withRetry(async () => {
+      // 存储会话数据，1小时过期
+      await this.client.set(
+        this.sessionKey(session.sessionId),
+        session,
+        { ex: 3600 }
+      );
+      
+      // 在活跃会话索引中记录
+      await this.client.zadd(this.activeSessionsKey(), {
+        score: session.lastActiveAt,
+        member: session.sessionId
+      });
+    });
+  }
+
+  async getUserSession(sessionId: string): Promise<UserSession | null> {
+    const val = await withRetry(() =>
+      this.client.get(this.sessionKey(sessionId))
+    );
+    return val ? (val as UserSession) : null;
+  }
+
+  async deleteUserSession(sessionId: string): Promise<void> {
+    await withRetry(async () => {
+      await this.client.del(this.sessionKey(sessionId));
+      await this.client.zrem(this.activeSessionsKey(), sessionId);
+    });
+  }
+
+  async getAllActiveSessions(timeoutMinutes = 30): Promise<UserSession[]> {
+    const now = Date.now();
+    const cutoffTime = now - timeoutMinutes * 60 * 1000;
+    
+    // 获取活跃的sessionId列表
+    const sessionIds = await withRetry(() =>
+      this.client.zrange(
+        this.activeSessionsKey(),
+        cutoffTime,
+        '+inf',
+        { byScore: true }
+      )
+    );
+    
+    const sessions: UserSession[] = [];
+    for (const sessionId of sessionIds) {
+      const session = await this.getUserSession(ensureString(sessionId));
+      if (session) {
+        sessions.push(session);
+      }
+    }
+    
+    // 清理过期的会话ID
+    await withRetry(() =>
+      this.client.zremrangebyscore(
+        this.activeSessionsKey(),
+        -Infinity,
+        cutoffTime
+      )
+    );
+    
+    return sessions;
+  }
+
+  // ---------- 广告管理 ----------
+  private advertisementKey(id: string) {
+    return `advertisement:${id}`;
+  }
+
+  private advertisementsIndexKey() {
+    return 'advertisements:index';
+  }
+
+  async createAdvertisement(ad: Advertisement): Promise<void> {
+    await withRetry(async () => {
+      // 保存广告数据
+      await this.client.set(this.advertisementKey(ad.id), ad);
+      
+      // 添加到索引集合
+      await this.client.sadd(this.advertisementsIndexKey(), ad.id);
+    });
+  }
+
+  async updateAdvertisement(id: string, updates: Partial<Advertisement>): Promise<void> {
+    await withRetry(async () => {
+      const existing = await this.getAdvertisement(id);
+      if (!existing) {
+        throw new Error('广告不存在');
+      }
+      
+      const updated: Advertisement = {
+        ...existing,
+        ...updates,
+        updatedAt: Date.now()
+      };
+      
+      await this.client.set(this.advertisementKey(id), updated);
+    });
+  }
+
+  async deleteAdvertisement(id: string): Promise<void> {
+    await withRetry(async () => {
+      await this.client.del(this.advertisementKey(id));
+      await this.client.srem(this.advertisementsIndexKey(), id);
+    });
+  }
+
+  async getAdvertisement(id: string): Promise<Advertisement | null> {
+    const data = await withRetry(() =>
+      this.client.get(this.advertisementKey(id))
+    );
+    return data ? (data as Advertisement) : null;
+  }
+
+  async getAllAdvertisements(): Promise<Advertisement[]> {
+    const ids = await withRetry(() =>
+      this.client.smembers(this.advertisementsIndexKey())
+    );
+    
+    if (ids.length === 0) {
+      return [];
+    }
+    
+    const ads: Advertisement[] = [];
+    for (const id of ids) {
+      const ad = await this.getAdvertisement(ensureString(id));
+      if (ad) {
+        ads.push(ad);
+      }
+    }
+    
+    return ads.sort((a, b) => b.priority - a.priority);
+  }
+
+  async getActiveAdvertisements(position?: string): Promise<Advertisement[]> {
+    const allAds = await this.getAllAdvertisements();
+    const now = Date.now();
+    
+    return allAds.filter((ad) => {
+      if (!ad.enabled) return false;
+      if (ad.startDate > now) return false;
+      if (ad.endDate < now) return false;
+      if (position && ad.position !== position) return false;
+      return true;
+    });
   }
 
   // 清空所有数据

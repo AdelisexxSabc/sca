@@ -39,21 +39,21 @@ export async function getApiCallStats(limit = 100): Promise<{
     const logs = await db.getApiCallLogs(limit);
     
     const total = logs.length;
-    const success = logs.filter(l => l.success).length;
+    const success = logs.filter((l: ApiCallLog) => l.success).length;
     const failed = total - success;
     const successRate = total > 0 ? (success / total) * 100 : 0;
     
     // 计算平均响应时间（仅成功的请求）
     const responseTimes = logs
-      .filter(l => l.success && l.responseTime !== undefined)
-      .map(l => l.responseTime!);
+      .filter((l: ApiCallLog) => l.success && l.responseTime !== undefined)
+      .map((l: ApiCallLog) => l.responseTime!);
     const avgResponseTime = responseTimes.length > 0
-      ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
+      ? responseTimes.reduce((a: number, b: number) => a + b, 0) / responseTimes.length
       : 0;
     
     // 按源分组统计
     const bySource: Record<string, { total: number; success: number; successRate: number }> = {};
-    logs.forEach(log => {
+    logs.forEach((log: ApiCallLog) => {
       if (!bySource[log.source]) {
         bySource[log.source] = { total: 0, success: 0, successRate: 0 };
       }
@@ -64,7 +64,7 @@ export async function getApiCallStats(limit = 100): Promise<{
     });
     
     // 计算每个源的成功率
-    Object.keys(bySource).forEach(source => {
+    Object.keys(bySource).forEach((source: string) => {
       const stats = bySource[source];
       stats.successRate = stats.total > 0 ? (stats.success / stats.total) * 100 : 0;
     });
