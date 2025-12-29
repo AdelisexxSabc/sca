@@ -94,7 +94,7 @@
 ```yml
 services:
   moontv-core:
-    image: ghcr.io/moontechlab/lunatv:latest
+    image: ghcr.io/7d653179z/sca:latest
     container_name: moontv-core
     restart: on-failure
     ports:
@@ -128,7 +128,7 @@ volumes:
 ```yml
 services:
   moontv-core:
-    image: ghcr.io/moontechlab/lunatv:latest
+    image: ghcr.io/7d653179z/sca:latest
     container_name: moontv-core
     restart: on-failure
     ports:
@@ -165,7 +165,7 @@ networks:
 ```yml
 services:
   moontv-core:
-    image: ghcr.io/moontechlab/lunatv:latest
+    image: ghcr.io/7d653179z/sca:latest
     container_name: moontv-core
     restart: on-failure
     ports:
@@ -204,7 +204,7 @@ Zeabur 是一站式云端部署平台，使用预构建的 Docker 镜像可以�
 2. **添加 LunaTV 服务**
 
    - 点击 "Add Service" > "Docker Images"
-   - 输入镜像名称：`ghcr.io/moontechlab/lunatv:latest`
+   - 输入镜像名称：`ghcr.io/7d653179z/sca:latest`
    - 配置端口：`3000` (HTTP)
 
 3. **配置环境变量**

@@ -9,7 +9,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: moontechlab/lunatv
+  IMAGE_NAME: 7d653179z/sca
 
 jobs:
   build-and-push:
