@@ -39,6 +39,8 @@ export async function POST(request: NextRequest) {
       DoubanImageProxy,
       DisableYellowFilter,
       FluidSearch,
+      openRegister,
+      defaultUserGroup,
     } = body as {
       SiteName: string;
       Announcement: string;
@@ -50,6 +52,8 @@ export async function POST(request: NextRequest) {
       DoubanImageProxy: string;
       DisableYellowFilter: boolean;
       FluidSearch: boolean;
+      openRegister?: boolean;
+      defaultUserGroup?: string;
     };
 
     // 参数校验
@@ -93,6 +97,8 @@ export async function POST(request: NextRequest) {
       DoubanImageProxy,
       DisableYellowFilter,
       FluidSearch,
+      openRegister: openRegister || false,
+      defaultUserGroup: defaultUserGroup || '',
     };
 
     // 写入数据库

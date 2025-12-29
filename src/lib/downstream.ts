@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { logApiCall } from './api-logger';
 import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
 import { getCachedSearchPage, setCachedSearchPage } from '@/lib/search-cache';
 import { SearchResult } from '@/lib/types';
@@ -41,6 +42,7 @@ async function searchWithCache(
   // 缓存未命中，发起网络请求
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const startTime = Date.now();
 
   try {
     const response = await fetch(url, {
@@ -49,8 +51,12 @@ async function searchWithCache(
     });
 
     clearTimeout(timeoutId);
+    const responseTime = Date.now() - startTime;
 
     if (!response.ok) {
+      // 记录失败的API调用
+      await logApiCall(apiSite.key, apiSite.name, false, `HTTP ${response.status}`, responseTime).catch(() => {});
+      
       if (response.status === 403) {
         setCachedSearchPage(apiSite.key, query, page, 'forbidden', []);
       }
@@ -67,6 +73,9 @@ async function searchWithCache(
       // 空结果不做负缓存要求，这里不写入缓存
       return { results: [] };
     }
+
+    // 记录成功的API调用
+    await logApiCall(apiSite.key, apiSite.name, true, undefined, responseTime).catch(() => {});
 
     // 处理结果数据
     const allResults = data.list.map((item: ApiSearchItem) => {
@@ -126,8 +135,15 @@ async function searchWithCache(
     return { results, pageCount };
   } catch (error: any) {
     clearTimeout(timeoutId);
+    const responseTime = Date.now() - startTime;
+    
     // 识别被 AbortController 中止（超时）
     const aborted = error?.name === 'AbortError' || error?.code === 20 || error?.message?.includes('aborted');
+    
+    // 记录失败的API调用
+    const errorMsg = aborted ? '超时' : error?.message || '未知错误';
+    await logApiCall(apiSite.key, apiSite.name, false, errorMsg, responseTime).catch(() => {});
+    
     if (aborted) {
       setCachedSearchPage(apiSite.key, query, page, 'timeout', []);
     }
@@ -209,81 +225,101 @@ export async function getDetailFromApi(
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const startTime = Date.now();
 
-  const response = await fetch(detailUrl, {
-    headers: API_CONFIG.detail.headers,
-    signal: controller.signal,
-  });
+  try {
+    const response = await fetch(detailUrl, {
+      headers: API_CONFIG.detail.headers,
+      signal: controller.signal,
+    });
 
-  clearTimeout(timeoutId);
+    clearTimeout(timeoutId);
+    const responseTime = Date.now() - startTime;
 
-  if (!response.ok) {
-    throw new Error(`详情请求失败: ${response.status}`);
-  }
+    if (!response.ok) {
+      // 记录失败的API调用
+      await logApiCall(apiSite.key, apiSite.name, false, `HTTP ${response.status}`, responseTime).catch(() => {});
+      throw new Error(`详情请求失败: ${response.status}`);
+    }
 
-  const data = await response.json();
+    const data = await response.json();
 
-  if (
-    !data ||
-    !data.list ||
-    !Array.isArray(data.list) ||
-    data.list.length === 0
-  ) {
-    throw new Error('获取到的详情内容无效');
-  }
+    if (
+      !data ||
+      !data.list ||
+      !Array.isArray(data.list) ||
+      data.list.length === 0
+    ) {
+      // 记录失败的API调用
+      await logApiCall(apiSite.key, apiSite.name, false, '无效数据', responseTime).catch(() => {});
+      throw new Error('获取到的详情内容无效');
+    }
 
-  const videoDetail = data.list[0];
-  let episodes: string[] = [];
-  let titles: string[] = [];
+    // 记录成功的API调用
+    await logApiCall(apiSite.key, apiSite.name, true, undefined, responseTime).catch(() => {});
 
-  // 处理播放源拆分
-  if (videoDetail.vod_play_url) {
-    // 先用 $$$ 分割
-    const vod_play_url_array = videoDetail.vod_play_url.split('$$$');
-    // 分集之间#分割，标题和播放链接 $ 分割
-    vod_play_url_array.forEach((url: string) => {
-      const matchEpisodes: string[] = [];
-      const matchTitles: string[] = [];
-      const title_url_array = url.split('#');
-      title_url_array.forEach((title_url: string) => {
-        const episode_title_url = title_url.split('$');
-        if (
-          episode_title_url.length === 2 &&
-          episode_title_url[1].endsWith('.m3u8')
-        ) {
-          matchTitles.push(episode_title_url[0]);
-          matchEpisodes.push(episode_title_url[1]);
+    const videoDetail = data.list[0];
+    let episodes: string[] = [];
+    let titles: string[] = [];
+
+    // 处理播放源拆分
+    if (videoDetail.vod_play_url) {
+      // 先用 $$$ 分割
+      const vod_play_url_array = videoDetail.vod_play_url.split('$$$');
+      // 分集之间#分割，标题和播放链接 $ 分割
+      vod_play_url_array.forEach((url: string) => {
+        const matchEpisodes: string[] = [];
+        const matchTitles: string[] = [];
+        const title_url_array = url.split('#');
+        title_url_array.forEach((title_url: string) => {
+          const episode_title_url = title_url.split('$');
+          if (
+            episode_title_url.length === 2 &&
+            episode_title_url[1].endsWith('.m3u8')
+          ) {
+            matchTitles.push(episode_title_url[0]);
+            matchEpisodes.push(episode_title_url[1]);
+          }
+        });
+        if (matchEpisodes.length > episodes.length) {
+          episodes = matchEpisodes;
+          titles = matchTitles;
         }
       });
-      if (matchEpisodes.length > episodes.length) {
-        episodes = matchEpisodes;
-        titles = matchTitles;
-      }
-    });
-  }
+    }
 
-  // 如果播放源为空，则尝试从内容中解析 m3u8
-  if (episodes.length === 0 && videoDetail.vod_content) {
-    const matches = videoDetail.vod_content.match(M3U8_PATTERN) || [];
-    episodes = matches.map((link: string) => link.replace(/^\$/, ''));
-  }
+    // 如果播放源为空，则尝试从内容中解析 m3u8
+    if (episodes.length === 0 && videoDetail.vod_content) {
+      const matches = videoDetail.vod_content.match(M3U8_PATTERN) || [];
+      episodes = matches.map((link: string) => link.replace(/^\$/, ''));
+    }
 
-  return {
-    id: id.toString(),
-    title: videoDetail.vod_name,
-    poster: videoDetail.vod_pic,
-    episodes,
-    episodes_titles: titles,
-    source: apiSite.key,
-    source_name: apiSite.name,
-    class: videoDetail.vod_class,
-    year: videoDetail.vod_year
-      ? videoDetail.vod_year.match(/\d{4}/)?.[0] || ''
-      : 'unknown',
-    desc: cleanHtmlTags(videoDetail.vod_content),
-    type_name: videoDetail.type_name,
-    douban_id: videoDetail.vod_douban_id,
-  };
+    return {
+      id: id.toString(),
+      title: videoDetail.vod_name,
+      poster: videoDetail.vod_pic,
+      episodes,
+      episodes_titles: titles,
+      source: apiSite.key,
+      source_name: apiSite.name,
+      class: videoDetail.vod_class,
+      year: videoDetail.vod_year
+        ? videoDetail.vod_year.match(/\d{4}/)?.[0] || ''
+        : 'unknown',
+      desc: cleanHtmlTags(videoDetail.vod_content),
+      type_name: videoDetail.type_name,
+      douban_id: videoDetail.vod_douban_id,
+    };
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    const responseTime = Date.now() - startTime;
+    
+    // 记录失败的API调用
+    const errorMsg = error?.message || '未知错误';
+    await logApiCall(apiSite.key, apiSite.name, false, errorMsg, responseTime).catch(() => {});
+    
+    throw error;
+  }
 }
 
 async function handleSpecialSourceDetail(

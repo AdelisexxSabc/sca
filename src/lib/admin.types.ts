@@ -16,6 +16,8 @@ export interface AdminConfig {
     DoubanImageProxy: string;
     DisableYellowFilter: boolean;
     FluidSearch: boolean;
+    openRegister?: boolean; // 是否开放注册
+    defaultUserGroup?: string; // 新用户默认用户组
   };
   UserConfig: {
     Users: {

@@ -24,6 +24,7 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   AlertCircle,
   AlertTriangle,
+  BarChart3,
   Check,
   CheckCircle,
   ChevronDown,
@@ -32,6 +33,7 @@ import {
   ExternalLink,
   FileText,
   FolderOpen,
+  Megaphone,
   Settings,
   Tv,
   Users,
@@ -44,6 +46,7 @@ import { createPortal } from 'react-dom';
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
+import AdvertisementManager from '@/components/AdvertisementManager';
 import DataMigration from '@/components/DataMigration';
 import PageLayout from '@/components/PageLayout';
 
@@ -267,6 +270,8 @@ interface SiteConfig {
   DoubanImageProxy: string;
   DisableYellowFilter: boolean;
   FluidSearch: boolean;
+  openRegister?: boolean; // 是否开放注册
+  defaultUserGroup?: string; // 新用户默认用户组
 }
 
 // 视频源数据类型
@@ -3378,6 +3383,300 @@ const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | 
   );
 };
 
+// 数据中心组件
+const DataCenterComponent = () => {
+  const { alertModal, showAlert, hideAlert } = useAlertModal();
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeRanking, setActiveRanking] = useState<'daily' | 'weekly'>('daily');
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  const fetchStats = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/admin/stats');
+      if (!response.ok) {
+        throw new Error('获取统计数据失败');
+      }
+      const data = await response.json();
+      setStats(data);
+    } catch (error) {
+      showAlert('error', '获取失败', (error as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className='space-y-6'>
+        <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className='h-32 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse' />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className='space-y-6'>
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={hideAlert}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        timer={alertModal.timer}
+        showConfirm={alertModal.showConfirm}
+      />
+
+      {/* 用户维度统计 */}
+      <div>
+        <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4'>
+          用户统计
+        </h3>
+        <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
+          <div className='bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-6 border border-blue-200 dark:border-blue-800'>
+            <div className='flex items-center justify-between'>
+              <div>
+                <p className='text-sm text-blue-600 dark:text-blue-400 font-medium'>今日新增</p>
+                <p className='text-3xl font-bold text-blue-700 dark:text-blue-300 mt-2'>
+                  {stats?.users?.todayNew || 0}
+                </p>
+              </div>
+              <Users className='w-12 h-12 text-blue-400 dark:text-blue-600' />
+            </div>
+          </div>
+
+          <div className='bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-6 border border-green-200 dark:border-green-800'>
+            <div className='flex items-center justify-between'>
+              <div>
+                <p className='text-sm text-green-600 dark:text-green-400 font-medium'>累计用户</p>
+                <p className='text-3xl font-bold text-green-700 dark:text-green-300 mt-2'>
+                  {stats?.users?.total || 0}
+                </p>
+              </div>
+              <Database className='w-12 h-12 text-green-400 dark:text-green-600' />
+            </div>
+          </div>
+
+          <div className='bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-6 border border-purple-200 dark:border-purple-800'>
+            <div className='flex items-center justify-between'>
+              <div>
+                <p className='text-sm text-purple-600 dark:text-purple-400 font-medium'>今日活跃</p>
+                <p className='text-3xl font-bold text-purple-700 dark:text-purple-300 mt-2'>
+                  {stats?.users?.todayActive || 0}
+                </p>
+              </div>
+              <BarChart3 className='w-12 h-12 text-purple-400 dark:text-purple-600' />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 内容维度统计 */}
+      <div>
+        <div className='flex items-center justify-between mb-4'>
+          <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
+            热门影视播放排行
+          </h3>
+          <div className='flex gap-2'>
+            <button
+              onClick={() => setActiveRanking('daily')}
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                activeRanking === 'daily'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+              }`}
+            >
+              日榜
+            </button>
+            <button
+              onClick={() => setActiveRanking('weekly')}
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                activeRanking === 'weekly'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+              }`}
+            >
+              周榜
+            </button>
+          </div>
+        </div>
+
+        <div className='bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden'>
+          <div className='overflow-x-auto'>
+            <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
+              <thead className='bg-gray-50 dark:bg-gray-900'>
+                <tr>
+                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    排名
+                  </th>
+                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    影视名称
+                  </th>
+                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    来源
+                  </th>
+                  <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                    播放次数
+                  </th>
+                </tr>
+              </thead>
+              <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+                {(activeRanking === 'daily' ? stats?.content?.dailyRanking : stats?.content?.weeklyRanking)?.map((item: any, index: number) => (
+                  <tr key={item.key} className='hover:bg-gray-50 dark:hover:bg-gray-700/50'>
+                    <td className='px-6 py-4 whitespace-nowrap'>
+                      <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
+                        index === 0 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200' :
+                        index === 1 ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
+                        index === 2 ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200' :
+                        'bg-blue-50 text-blue-800 dark:bg-blue-900/20 dark:text-blue-200'
+                      }`}>
+                        {index + 1}
+                      </span>
+                    </td>
+                    <td className='px-6 py-4'>
+                      <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                        {item.title}
+                      </div>
+                    </td>
+                    <td className='px-6 py-4 whitespace-nowrap'>
+                      <span className='px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'>
+                        {item.source_name}
+                      </span>
+                    </td>
+                    <td className='px-6 py-4 whitespace-nowrap text-right'>
+                      <span className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
+                        {item.count}
+                      </span>
+                    </td>
+                  </tr>
+                )) || (
+                  <tr>
+                    <td colSpan={4} className='px-6 py-8 text-center text-gray-500 dark:text-gray-400'>
+                      暂无数据
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* 搜索热词统计 */}
+      <div>
+        <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4'>
+          搜索热词
+        </h3>
+        <div className='bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6'>
+          <div className='flex flex-wrap gap-2'>
+            {stats?.content?.searchRanking?.map((item: any, index: number) => (
+              <div
+                key={item.keyword}
+                className='inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-800'
+              >
+                <span className='text-xs font-bold text-blue-600 dark:text-blue-400'>
+                  #{index + 1}
+                </span>
+                <span className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                  {item.keyword}
+                </span>
+                <span className='text-xs text-gray-500 dark:text-gray-400'>
+                  ({item.count})
+                </span>
+              </div>
+            )) || (
+              <p className='text-gray-500 dark:text-gray-400'>暂无搜索记录</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 系统维度统计 */}
+      <div>
+        <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4'>
+          系统状态
+        </h3>
+        <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+          <div className='bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6'>
+            <p className='text-sm text-gray-600 dark:text-gray-400 mb-2'>实时在线人数</p>
+            <p className='text-2xl font-bold text-gray-900 dark:text-gray-100'>
+              {stats?.system?.onlineUsers || 0} 人
+            </p>
+            <p className='text-xs text-gray-500 dark:text-gray-400 mt-2'>
+              最近30分钟内活跃的用户
+            </p>
+          </div>
+
+          <div className='bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6'>
+            <p className='text-sm text-gray-600 dark:text-gray-400 mb-2'>API调用成功率</p>
+            <div className='flex items-center gap-3'>
+              <p className='text-2xl font-bold text-green-600 dark:text-green-400'>
+                {stats?.system?.sourceStats?.successRate || '0'}%
+              </p>
+              <div className='flex-1'>
+                <p className='text-xs text-gray-500 dark:text-gray-400'>
+                  成功: {stats?.system?.sourceStats?.success || 0} / 总计: {stats?.system?.sourceStats?.total || 0}
+                </p>
+                <p className='text-xs text-gray-500 dark:text-gray-400'>
+                  平均响应: {stats?.system?.sourceStats?.avgResponseTime || 0}ms
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* API源详细统计 */}
+        {stats?.system?.sourceStats?.bySource && Object.keys(stats.system.sourceStats.bySource).length > 0 && (
+          <div className='mt-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6'>
+            <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300 mb-4'>
+              各源调用统计
+            </h4>
+            <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'>
+              {Object.entries(stats.system.sourceStats.bySource).map(([source, data]: [string, any]) => (
+                <div
+                  key={source}
+                  className='bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700'
+                >
+                  <p className='text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 truncate'>
+                    {source}
+                  </p>
+                  <div className='flex items-center justify-between'>
+                    <span className='text-xs text-gray-600 dark:text-gray-400'>
+                      成功率
+                    </span>
+                    <span className={`text-sm font-bold ${
+                      data.successRate >= 90 ? 'text-green-600 dark:text-green-400' :
+                      data.successRate >= 70 ? 'text-yellow-600 dark:text-yellow-400' :
+                      'text-red-600 dark:text-red-400'
+                    }`}>
+                      {data.successRate.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className='flex items-center justify-between mt-1'>
+                    <span className='text-xs text-gray-600 dark:text-gray-400'>
+                      调用次数
+                    </span>
+                    <span className='text-sm text-gray-900 dark:text-gray-100'>
+                      {data.total}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // 新增站点配置组件
 const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | null; refreshConfig: () => Promise<void> }) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
@@ -3393,6 +3692,8 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     DoubanImageProxy: '',
     DisableYellowFilter: false,
     FluidSearch: true,
+    openRegister: false,
+    defaultUserGroup: '',
   });
 
   // 豆瓣数据源相关状态
@@ -3455,6 +3756,8 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
         DoubanImageProxy: config.SiteConfig.DoubanImageProxy || '',
         DisableYellowFilter: config.SiteConfig.DisableYellowFilter || false,
         FluidSearch: config.SiteConfig.FluidSearch || true,
+        openRegister: config.SiteConfig.openRegister || false,
+        defaultUserGroup: config.SiteConfig.defaultUserGroup || '',
       });
     }
   }, [config]);
@@ -3906,6 +4209,64 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
           启用后搜索结果将实时流式返回，提升用户体验。
         </p>
       </div>
+
+      {/* 开放注册 */}
+      <div>
+        <div className='flex items-center justify-between'>
+          <label
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+          >
+            开放用户注册
+          </label>
+          <button
+            type='button'
+            onClick={() =>
+              setSiteSettings((prev) => ({
+                ...prev,
+                openRegister: !prev.openRegister,
+              }))
+            }
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 ${siteSettings.openRegister
+              ? buttonStyles.toggleOn
+              : buttonStyles.toggleOff
+              }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full ${buttonStyles.toggleThumb} transition-transform ${siteSettings.openRegister
+                ? buttonStyles.toggleThumbOn
+                : buttonStyles.toggleThumbOff
+                }`}
+            />
+          </button>
+        </div>
+        <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+          开启后，用户可以在登录页面自行注册账号。
+        </p>
+      </div>
+
+      {/* 默认用户组 */}
+      {siteSettings.openRegister && (
+        <div>
+          <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+            新用户默认用户组
+          </label>
+          <input
+            type='text'
+            placeholder='留空则不分配用户组'
+            value={siteSettings.defaultUserGroup || ''}
+            onChange={(e) =>
+              setSiteSettings((prev) => ({
+                ...prev,
+                defaultUserGroup: e.target.value,
+              }))
+            }
+            className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder-gray-500 dark:placeholder-gray-400'
+          />
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            新注册用户将自动加入此用户组，用于限制可访问的资源源。
+          </p>
+        </div>
+      )}
 
 
       {/* 操作按钮 */}
@@ -4497,6 +4858,7 @@ function AdminPageClient() {
   const [error, setError] = useState<string | null>(null);
   const [role, setRole] = useState<'owner' | 'admin' | null>(null);
   const [showResetConfigModal, setShowResetConfigModal] = useState(false);
+  const [showAdModal, setShowAdModal] = useState(false);
   const [expandedTabs, setExpandedTabs] = useState<{ [key: string]: boolean }>({
     userConfig: false,
     videoSource: false,
@@ -4505,6 +4867,7 @@ function AdminPageClient() {
     categoryConfig: false,
     configFile: false,
     dataMigration: false,
+    dataCenter: false,
   });
 
   // 获取管理员配置
@@ -4649,6 +5012,35 @@ function AdminPageClient() {
             <SiteConfigComponent config={config} refreshConfig={fetchConfig} />
           </CollapsibleTab>
 
+          {/* 数据中心标签 */}
+          <CollapsibleTab
+            title='数据中心'
+            icon={
+              <BarChart3
+                size={20}
+                className='text-gray-600 dark:text-gray-400'
+              />
+            }
+            isExpanded={expandedTabs.dataCenter}
+            onToggle={() => toggleTab('dataCenter')}
+          >
+            <DataCenterComponent />
+          </CollapsibleTab>
+
+          {/* 广告管理按钮 */}
+          <div className='bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4'>
+            <button
+              onClick={() => setShowAdModal(true)}
+              className='w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-lg transition-all shadow-md hover:shadow-lg'
+            >
+              <div className='flex items-center space-x-3'>
+                <Megaphone size={20} />
+                <span className='font-semibold'>广告管理</span>
+              </div>
+              <ExternalLink size={18} />
+            </button>
+          </div>
+
           <div className='space-y-4'>
             {/* 用户配置标签 */}
             <CollapsibleTab
@@ -4792,6 +5184,49 @@ function AdminPageClient() {
         </div>,
         document.body
       )}
+
+      {/* 广告管理弹窗 */}
+      {showAdModal &&
+        createPortal(
+          <div className='fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4'>
+            <div className='bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col'>
+              {/* 弹窗头部 */}
+              <div className='flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700'>
+                <div className='flex items-center space-x-3'>
+                  <Megaphone size={24} className='text-blue-600' />
+                  <h2 className='text-2xl font-bold text-gray-900 dark:text-white'>
+                    广告管理
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setShowAdModal(false)}
+                  className='p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors'
+                  aria-label='关闭'
+                >
+                  <svg
+                    className='w-6 h-6 text-gray-500 dark:text-gray-400'
+                    fill='none'
+                    stroke='currentColor'
+                    viewBox='0 0 24 24'
+                  >
+                    <path
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      strokeWidth={2}
+                      d='M6 18L18 6M6 6l12 12'
+                    />
+                  </svg>
+                </button>
+              </div>
+
+              {/* 弹窗内容 */}
+              <div className='flex-1 overflow-y-auto p-6'>
+                <AdvertisementManager showAlert={showAlert} />
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </PageLayout>
   );
 }

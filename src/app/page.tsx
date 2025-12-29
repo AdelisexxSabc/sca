@@ -20,6 +20,7 @@ import {
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
 
+import AdDisplay from '@/components/AdDisplay';
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
@@ -223,6 +224,13 @@ function HomeClient() {
           ) : (
             // 首页视图
             <>
+              {/* 首页顶部横幅广告 */}
+              <AdDisplay
+                position="home_banner"
+                className="mb-6 rounded-lg overflow-hidden"
+                showCloseButton={true}
+              />
+
               {/* 继续观看 */}
               <ContinueWatching />
 
@@ -442,6 +450,13 @@ function HomeClient() {
                     ))}
                 </ScrollableRow>
               </section>
+
+              {/* 首页侧边栏广告 */}
+              <AdDisplay
+                position="home_sidebar"
+                className="mb-6 rounded-lg overflow-hidden"
+                showCloseButton={true}
+              />
             </>
           )}
         </div>

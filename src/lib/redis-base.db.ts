@@ -3,7 +3,16 @@
 import { createClient, RedisClientType } from 'redis';
 
 import { AdminConfig } from './admin.types';
-import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
+import { 
+  Favorite, 
+  IStorage, 
+  PlayRecord, 
+  SkipConfig,
+  UserMeta,
+  ApiCallLog,
+  UserSession,
+  Advertisement
+} from './types';
 
 // 搜索历史最大条数
 const SEARCH_HISTORY_LIMIT = 20;
@@ -462,5 +471,219 @@ export abstract class BaseRedisStorage implements IStorage {
       console.error('清空数据失败:', error);
       throw new Error('清空数据失败');
     }
+  }
+
+  // ---------- 用户元数据 ----------
+  private userMetaKey(user: string) {
+    return `u:${user}:meta`;
+  }
+
+  async getUserMeta(userName: string): Promise<UserMeta | null> {
+    const val = await this.withRetry(() =>
+      this.client.get(this.userMetaKey(userName))
+    );
+    return val ? (JSON.parse(val) as UserMeta) : null;
+  }
+
+  async setUserMeta(userName: string, meta: UserMeta): Promise<void> {
+    await this.withRetry(() =>
+      this.client.set(this.userMetaKey(userName), JSON.stringify(meta))
+    );
+  }
+
+  // ---------- API调用日志 ----------
+  private apiCallLogsKey() {
+    return 'api:call:logs';
+  }
+
+  async addApiCallLog(log: ApiCallLog): Promise<void> {
+    const key = this.apiCallLogsKey();
+    const logStr = JSON.stringify(log);
+    
+    await this.withRetry(async () => {
+      // 使用sorted set存储，按时间戳排序
+      await this.client.zAdd(key, {
+        score: log.timestamp,
+        value: logStr
+      });
+      
+      // 只保留最近1000条日志
+      const count = await this.client.zCard(key);
+      if (count > 1000) {
+        await this.client.zRemRangeByRank(key, 0, count - 1001);
+      }
+    });
+  }
+
+  async getApiCallLogs(limit: number = 100): Promise<ApiCallLog[]> {
+    const key = this.apiCallLogsKey();
+    const logs = await this.withRetry(() =>
+      this.client.zRange(key, 0, limit - 1, { REV: true })
+    );
+    return logs.map((log) => JSON.parse(log) as ApiCallLog);
+  }
+
+  // ---------- 在线会话 ----------
+  private sessionKey(sessionId: string) {
+    return `session:${sessionId}`;
+  }
+
+  private activeSessionsKey() {
+    return 'sessions:active';
+  }
+
+  async setUserSession(session: UserSession): Promise<void> {
+    await this.withRetry(async () => {
+      // 存储会话数据，1小时过期
+      await this.client.setEx(
+        this.sessionKey(session.sessionId),
+        3600,
+        JSON.stringify(session)
+      );
+      
+      // 在活跃会话索引中记录
+      await this.client.zAdd(this.activeSessionsKey(), {
+        score: session.lastActiveAt,
+        value: session.sessionId
+      });
+    });
+  }
+
+  async getUserSession(sessionId: string): Promise<UserSession | null> {
+    const val = await this.withRetry(() =>
+      this.client.get(this.sessionKey(sessionId))
+    );
+    return val ? (JSON.parse(val) as UserSession) : null;
+  }
+
+  async deleteUserSession(sessionId: string): Promise<void> {
+    await this.withRetry(async () => {
+      await this.client.del(this.sessionKey(sessionId));
+      await this.client.zRem(this.activeSessionsKey(), sessionId);
+    });
+  }
+
+  async getAllActiveSessions(timeoutMinutes: number = 30): Promise<UserSession[]> {
+    const now = Date.now();
+    const cutoffTime = now - timeoutMinutes * 60 * 1000;
+    
+    // 获取活跃的sessionId列表
+    const sessionIds = await this.withRetry(() =>
+      this.client.zRangeByScore(
+        this.activeSessionsKey(),
+        cutoffTime,
+        '+inf'
+      )
+    );
+    
+    const sessions: UserSession[] = [];
+    for (const sessionId of sessionIds) {
+      const session = await this.getUserSession(sessionId);
+      if (session) {
+        sessions.push(session);
+      }
+    }
+    
+    // 清理过期的会话ID
+    await this.withRetry(() =>
+      this.client.zRemRangeByScore(
+        this.activeSessionsKey(),
+        '-inf',
+        cutoffTime
+      )
+    );
+    
+    return sessions;
+  }
+
+  // ---------- 广告管理 ----------
+  private advertisementKey(id: string) {
+    return `advertisement:${id}`;
+  }
+
+  private advertisementsIndexKey() {
+    return 'advertisements:index';
+  }
+
+  async createAdvertisement(ad: Advertisement): Promise<void> {
+    await this.withRetry(async () => {
+      // 保存广告数据
+      await this.client.set(this.advertisementKey(ad.id), JSON.stringify(ad));
+      
+      // 添加到索引集合
+      await this.client.sAdd(this.advertisementsIndexKey(), ad.id);
+    });
+  }
+
+  async updateAdvertisement(id: string, updates: Partial<Advertisement>): Promise<void> {
+    await this.withRetry(async () => {
+      const existing = await this.getAdvertisement(id);
+      if (!existing) {
+        throw new Error('广告不存在');
+      }
+      
+      const updated: Advertisement = {
+        ...existing,
+        ...updates,
+        updatedAt: Date.now()
+      };
+      
+      await this.client.set(this.advertisementKey(id), JSON.stringify(updated));
+    });
+  }
+
+  async deleteAdvertisement(id: string): Promise<void> {
+    await this.withRetry(async () => {
+      await this.client.del(this.advertisementKey(id));
+      await this.client.sRem(this.advertisementsIndexKey(), id);
+    });
+  }
+
+  async getAdvertisement(id: string): Promise<Advertisement | null> {
+    const data = await this.withRetry(() =>
+      this.client.get(this.advertisementKey(id))
+    );
+    return data ? (JSON.parse(data) as Advertisement) : null;
+  }
+
+  async getAllAdvertisements(): Promise<Advertisement[]> {
+    const ids = await this.withRetry(() =>
+      this.client.sMembers(this.advertisementsIndexKey())
+    );
+    
+    if (ids.length === 0) return [];
+    
+    const ads: Advertisement[] = [];
+    for (const id of ids) {
+      const ad = await this.getAdvertisement(id);
+      if (ad) {
+        ads.push(ad);
+      }
+    }
+    
+    return ads;
+  }
+
+  async getActiveAdvertisements(position?: string): Promise<Advertisement[]> {
+    const allAds = await this.getAllAdvertisements();
+    const now = Date.now();
+    
+    console.log(`筛选广告 - position: ${position || 'all'}, 总数: ${allAds.length}, 当前时间: ${new Date(now).toISOString()}`);
+    
+    // 筛选条件：已开启 && 在有效期内 && (如果指定了位置则匹配位置)
+    const activeAds = allAds.filter(ad => {
+      const isEnabled = ad.enabled;
+      const isInValidPeriod = now >= ad.startDate && now <= ad.endDate;
+      const matchesPosition = !position || ad.position === position;
+      
+      console.log(`广告 ${ad.id} (${ad.position}): enabled=${isEnabled}, inPeriod=${isInValidPeriod}, matchPos=${matchesPosition}, start=${new Date(ad.startDate).toISOString()}, end=${new Date(ad.endDate).toISOString()}`);
+      
+      return isEnabled && isInValidPeriod && matchesPosition;
+    });
+    
+    console.log(`筛选后广告数: ${activeAds.length}`);
+    
+    // 按优先级排序（降序）
+    return activeAds.sort((a, b) => b.priority - a.priority);
   }
 }

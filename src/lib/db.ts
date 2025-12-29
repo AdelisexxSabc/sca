@@ -239,6 +239,101 @@ export class DbManager {
       throw new Error('存储类型不支持清空数据操作');
     }
   }
+
+  // ---------- 用户元数据 ----------
+  async getUserMeta(userName: string) {
+    if (typeof (this.storage as any).getUserMeta === 'function') {
+      return (this.storage as any).getUserMeta(userName);
+    }
+    return null;
+  }
+
+  async setUserMeta(userName: string, meta: any) {
+    if (typeof (this.storage as any).setUserMeta === 'function') {
+      await (this.storage as any).setUserMeta(userName, meta);
+    }
+  }
+
+  // ---------- API调用日志 ----------
+  async addApiCallLog(log: any) {
+    if (typeof (this.storage as any).addApiCallLog === 'function') {
+      await (this.storage as any).addApiCallLog(log);
+    }
+  }
+
+  async getApiCallLogs(limit?: number) {
+    if (typeof (this.storage as any).getApiCallLogs === 'function') {
+      return (this.storage as any).getApiCallLogs(limit);
+    }
+    return [];
+  }
+
+  // ---------- 在线会话 ----------
+  async setUserSession(session: any) {
+    if (typeof (this.storage as any).setUserSession === 'function') {
+      await (this.storage as any).setUserSession(session);
+    }
+  }
+
+  async getUserSession(sessionId: string) {
+    if (typeof (this.storage as any).getUserSession === 'function') {
+      return (this.storage as any).getUserSession(sessionId);
+    }
+    return null;
+  }
+
+  async deleteUserSession(sessionId: string) {
+    if (typeof (this.storage as any).deleteUserSession === 'function') {
+      await (this.storage as any).deleteUserSession(sessionId);
+    }
+  }
+
+  async getAllActiveSessions(timeoutMinutes?: number) {
+    if (typeof (this.storage as any).getAllActiveSessions === 'function') {
+      return (this.storage as any).getAllActiveSessions(timeoutMinutes);
+    }
+    return [];
+  }
+
+  // ---------- 广告管理 ----------
+  async createAdvertisement(ad: any) {
+    if (typeof (this.storage as any).createAdvertisement === 'function') {
+      return (this.storage as any).createAdvertisement(ad);
+    }
+  }
+
+  async updateAdvertisement(id: string, ad: any) {
+    if (typeof (this.storage as any).updateAdvertisement === 'function') {
+      return (this.storage as any).updateAdvertisement(id, ad);
+    }
+  }
+
+  async deleteAdvertisement(id: string) {
+    if (typeof (this.storage as any).deleteAdvertisement === 'function') {
+      return (this.storage as any).deleteAdvertisement(id);
+    }
+  }
+
+  async getAdvertisement(id: string) {
+    if (typeof (this.storage as any).getAdvertisement === 'function') {
+      return (this.storage as any).getAdvertisement(id);
+    }
+    return null;
+  }
+
+  async getAllAdvertisements() {
+    if (typeof (this.storage as any).getAllAdvertisements === 'function') {
+      return (this.storage as any).getAllAdvertisements();
+    }
+    return [];
+  }
+
+  async getActiveAdvertisements(position?: string) {
+    if (typeof (this.storage as any).getActiveAdvertisements === 'function') {
+      return (this.storage as any).getActiveAdvertisements(position);
+    }
+    return [];
+  }
 }
 
 // 导出默认实例

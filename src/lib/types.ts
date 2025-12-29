@@ -1,5 +1,49 @@
 import { AdminConfig } from './admin.types';
 
+// 用户元数据
+export interface UserMeta {
+  createdAt: number; // 注册时间戳
+  lastActiveAt: number; // 最后活跃时间戳
+  loginCount: number; // 登录次数
+}
+
+// API调用日志
+export interface ApiCallLog {
+  timestamp: number;
+  source: string;
+  sourceName: string;
+  success: boolean;
+  error?: string;
+  responseTime?: number;
+}
+
+// 在线会话
+export interface UserSession {
+  username: string;
+  sessionId: string;
+  lastActiveAt: number;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+// 广告系统
+export interface Advertisement {
+  id: string; // 广告唯一ID
+  position: string; // 广告位标识 (home_banner, player_bottom, sidebar_top等)
+  type: 'image' | 'video' | 'js'; // 广告类型
+  title: string; // 广告标题
+  materialUrl: string; // 素材链接（图片/视频URL或JS代码）
+  clickUrl?: string; // 点击跳转地址（可选）
+  width?: number; // 广告宽度
+  height?: number; // 广告高度
+  startDate: number; // 生效日期（时间戳）
+  endDate: number; // 失效日期（时间戳）
+  enabled: boolean; // 是否开启
+  priority: number; // 优先级（数字越大优先级越高）
+  createdAt: number; // 创建时间
+  updatedAt: number; // 更新时间
+}
+
 // 播放记录数据结构
 export interface PlayRecord {
   title: string;
@@ -80,6 +124,28 @@ export interface IStorage {
   ): Promise<void>;
   deleteSkipConfig(userName: string, source: string, id: string): Promise<void>;
   getAllSkipConfigs(userName: string): Promise<{ [key: string]: SkipConfig }>;
+
+  // 用户元数据
+  getUserMeta(userName: string): Promise<UserMeta | null>;
+  setUserMeta(userName: string, meta: UserMeta): Promise<void>;
+  
+  // API调用日志
+  addApiCallLog(log: ApiCallLog): Promise<void>;
+  getApiCallLogs(limit?: number): Promise<ApiCallLog[]>;
+  
+  // 在线会话
+  setUserSession(session: UserSession): Promise<void>;
+  getUserSession(sessionId: string): Promise<UserSession | null>;
+  deleteUserSession(sessionId: string): Promise<void>;
+  getAllActiveSessions(timeoutMinutes?: number): Promise<UserSession[]>;
+
+  // 广告管理
+  createAdvertisement(ad: Advertisement): Promise<void>;
+  updateAdvertisement(id: string, ad: Partial<Advertisement>): Promise<void>;
+  deleteAdvertisement(id: string): Promise<void>;
+  getAdvertisement(id: string): Promise<Advertisement | null>;
+  getAllAdvertisements(): Promise<Advertisement[]>;
+  getActiveAdvertisements(position?: string): Promise<Advertisement[]>;
 
   // 数据清理相关
   clearAllData(): Promise<void>;

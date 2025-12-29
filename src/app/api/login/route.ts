@@ -106,9 +106,9 @@ export async function POST(req: NextRequest) {
       const cookieValue = await generateAuthCookie(
         undefined,
         password,
-        'user',
+        'owner',
         true
-      ); // localstorage 模式包含 password
+      ); // localstorage 模式包含 password，设置为 owner 角色
       const expires = new Date();
       expires.setDate(expires.getDate() + 7); // 7天过期
 
@@ -176,6 +176,18 @@ export async function POST(req: NextRequest) {
           { error: '用户名或密码错误' },
           { status: 401 }
         );
+      }
+
+      // 更新用户元数据（登录计数和最后活跃时间）
+      try {
+        const meta = await db.getUserMeta(username);
+        await db.setUserMeta(username, {
+          createdAt: meta?.createdAt || Date.now(),
+          lastActiveAt: Date.now(),
+          loginCount: (meta?.loginCount || 0) + 1
+        });
+      } catch (err) {
+        console.error('更新用户元数据失败:', err);
       }
 
       // 验证成功，设置认证cookie
