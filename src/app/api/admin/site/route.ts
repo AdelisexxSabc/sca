@@ -29,6 +29,49 @@ export async function POST(request: NextRequest) {
     }
     const username = authInfo.username;
 
+    const adminConfig = await getConfig();
+
+    // 权限校验
+    if (username !== process.env.USERNAME) {
+      // 管理员
+      const user = adminConfig.UserConfig.Users.find(
+        (u) => u.username === username
+      );
+      if (!user || user.role !== 'admin' || user.banned) {
+        return NextResponse.json({ error: '权限不足' }, { status: 401 });
+      }
+    }
+
+    // 支持部分更新模式
+    if (body.action === 'updateConfig') {
+      // 部分更新站点配置
+      if (typeof body.openRegister === 'boolean') {
+        adminConfig.SiteConfig.openRegister = body.openRegister;
+      }
+      if (typeof body.autoCleanInactiveUsers === 'boolean') {
+        adminConfig.SiteConfig.autoCleanInactiveUsers = body.autoCleanInactiveUsers;
+      }
+      if (typeof body.inactiveUserDays === 'number') {
+        adminConfig.SiteConfig.inactiveUserDays = Math.max(1, Math.min(365, body.inactiveUserDays));
+      }
+      if (typeof body.defaultUserGroup === 'string') {
+        adminConfig.SiteConfig.defaultUserGroup = body.defaultUserGroup;
+      }
+
+      // 写入数据库
+      await db.saveAdminConfig(adminConfig);
+
+      return NextResponse.json(
+        { ok: true },
+        {
+          headers: {
+            'Cache-Control': 'no-store',
+          },
+        }
+      );
+    }
+
+    // 完整更新模式（保持向后兼容）
     const {
       SiteName,
       Announcement,
@@ -42,6 +85,8 @@ export async function POST(request: NextRequest) {
       FluidSearch,
       openRegister,
       defaultUserGroup,
+      autoCleanInactiveUsers,
+      inactiveUserDays,
     } = body as {
       SiteName: string;
       Announcement: string;
@@ -55,6 +100,8 @@ export async function POST(request: NextRequest) {
       FluidSearch: boolean;
       openRegister?: boolean;
       defaultUserGroup?: string;
+      autoCleanInactiveUsers?: boolean;
+      inactiveUserDays?: number;
     };
 
     // 参数校验
@@ -73,19 +120,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
     }
 
-    const adminConfig = await getConfig();
-
-    // 权限校验
-    if (username !== process.env.USERNAME) {
-      // 管理员
-      const user = adminConfig.UserConfig.Users.find(
-        (u) => u.username === username
-      );
-      if (!user || user.role !== 'admin' || user.banned) {
-        return NextResponse.json({ error: '权限不足' }, { status: 401 });
-      }
-    }
-
     // 更新缓存中的站点设置
     adminConfig.SiteConfig = {
       SiteName,
@@ -100,6 +134,8 @@ export async function POST(request: NextRequest) {
       FluidSearch,
       openRegister: openRegister || false,
       defaultUserGroup: defaultUserGroup || '',
+      autoCleanInactiveUsers: autoCleanInactiveUsers || false,
+      inactiveUserDays: inactiveUserDays || 7,
     };
 
     // 写入数据库

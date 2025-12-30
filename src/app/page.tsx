@@ -4,7 +4,8 @@
 
 import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
-import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState, useRef } from 'react';
 
 import {
   BangumiCalendarData,
@@ -23,12 +24,14 @@ import { DoubanItem } from '@/lib/types';
 import AdDisplay from '@/components/AdDisplay';
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
+import HeroBanner from '@/components/HeroBanner';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
 import VideoCard from '@/components/VideoCard';
 
 function HomeClient() {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'home' | 'favorites'>('home');
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
@@ -38,8 +41,28 @@ function HomeClient() {
   >([]);
   const [loading, setLoading] = useState(true);
   const { announcement } = useSite();
+  const continueWatchingRef = useRef<HTMLDivElement>(null);
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+
+  // 处理 URL 参数切换 tab 和滚动
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    const scroll = searchParams.get('scroll');
+    
+    if (tab === 'favorites') {
+      setActiveTab('favorites');
+    } else if (tab === 'home') {
+      setActiveTab('home');
+    }
+    
+    // 如果需要滚动到继续观看区域
+    if (scroll === 'continue' && continueWatchingRef.current) {
+      setTimeout(() => {
+        continueWatchingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 300);
+    }
+  }, [searchParams]);
 
   // 检查公告弹窗状态
   useEffect(() => {
@@ -231,8 +254,18 @@ function HomeClient() {
                 showCloseButton={true}
               />
 
+              {/* 热播轮播 */}
+              <HeroBanner
+                hotMovies={hotMovies}
+                hotTvShows={hotTvShows}
+                hotVarietyShows={hotVarietyShows}
+                loading={loading}
+              />
+
               {/* 继续观看 */}
-              <ContinueWatching />
+              <div ref={continueWatchingRef}>
+                <ContinueWatching />
+              </div>
 
               {/* 热门电影 */}
               <section className='mb-8'>

@@ -42,6 +42,73 @@ async function cronJob() {
   await refreshConfig();
   await refreshAllLiveChannels();
   await refreshRecordAndFavorites();
+  await cleanInactiveUsers();
+}
+
+// 清理非活跃用户
+async function cleanInactiveUsers() {
+  try {
+    const config = await getConfig();
+    
+    // 检查是否开启了自动清理功能
+    if (!config.SiteConfig.autoCleanInactiveUsers) {
+      console.log('自动清理非活跃用户功能未开启，跳过');
+      return;
+    }
+
+    const inactiveDays = config.SiteConfig.inactiveUserDays || 7;
+    const cutoffTime = Date.now() - inactiveDays * 24 * 60 * 60 * 1000;
+    const ownerUsername = process.env.USERNAME;
+    
+    console.log(`开始清理 ${inactiveDays} 天未登录的非活跃用户...`);
+    
+    const usersToRemove: string[] = [];
+    
+    for (const user of config.UserConfig.Users) {
+      // 跳过站长和管理员
+      if (user.role === 'owner' || user.role === 'admin' || user.username === ownerUsername) {
+        continue;
+      }
+      
+      // 获取用户元数据
+      const userMeta = await db.getUserMeta(user.username);
+      const lastActiveAt = userMeta?.lastActiveAt || userMeta?.createdAt || 0;
+      
+      // 如果用户最后活跃时间超过阈值，标记为删除
+      if (lastActiveAt > 0 && lastActiveAt < cutoffTime) {
+        usersToRemove.push(user.username);
+      }
+    }
+    
+    if (usersToRemove.length === 0) {
+      console.log('没有需要清理的非活跃用户');
+      return;
+    }
+    
+    console.log(`发现 ${usersToRemove.length} 个非活跃用户待清理: ${usersToRemove.join(', ')}`);
+    
+    // 从配置中移除用户
+    config.UserConfig.Users = config.UserConfig.Users.filter(
+      u => !usersToRemove.includes(u.username)
+    );
+    
+    // 保存配置
+    await db.saveAdminConfig(config);
+    
+    // 清理用户数据
+    for (const username of usersToRemove) {
+      try {
+        await db.deleteUser(username);
+        console.log(`已清理用户数据: ${username}`);
+      } catch (err) {
+        console.error(`清理用户数据失败 (${username}):`, err);
+      }
+    }
+    
+    console.log(`成功清理 ${usersToRemove.length} 个非活跃用户`);
+  } catch (error) {
+    console.error('清理非活跃用户失败:', error);
+  }
 }
 
 async function refreshAllLiveChannels() {

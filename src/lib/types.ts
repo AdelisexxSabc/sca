@@ -174,6 +174,7 @@ export interface DoubanItem {
   poster: string;
   rate: string;
   year: string;
+  plot_summary?: string; // 剧情简介（可选）
 }
 
 export interface DoubanResult {
@@ -187,4 +188,56 @@ export interface SkipConfig {
   enable: boolean; // 是否启用跳过片头片尾
   intro_time: number; // 片头时间（秒）
   outro_time: number; // 片尾时间（秒）
+}
+
+// 用户播放统计
+export interface UserPlayStat {
+  username: string;
+  totalWatchTime: number;
+  totalPlays: number;
+  lastPlayTime: number;
+  recentRecords: PlayRecord[];
+  avgWatchTime: number;
+  mostWatchedSource: string;
+  registrationDays: number;
+  lastLoginTime: number;
+  loginCount: number;
+  createdAt: number;
+  firstWatchDate?: number;
+  lastLoginDate?: number;
+  firstLoginTime?: number;
+  loginDays?: number;
+  totalMovies?: number;
+}
+
+// 全站播放统计数据结构
+export interface PlayStatsResult {
+  totalUsers: number;
+  totalWatchTime: number;
+  totalPlays: number;
+  avgWatchTimePerUser: number;
+  avgPlaysPerUser: number;
+  userStats: UserPlayStat[];
+  topSources: Array<{
+    source: string;
+    count: number;
+  }>;
+  dailyStats: Array<{
+    date: string;
+    watchTime: number;
+    plays: number;
+  }>;
+  registrationStats: {
+    todayNewUsers: number;
+    totalRegisteredUsers: number;
+    registrationTrend: Array<{
+      date: string;
+      newUsers: number;
+    }>;
+  };
+  activeUsers: {
+    daily: number;
+    weekly: number;
+    monthly: number;
+  };
 }

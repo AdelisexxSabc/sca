@@ -334,6 +334,32 @@ export class DbManager {
     }
     return [];
   }
+
+  // ---------- 通用缓存方法 ----------
+  async getCache(key: string): Promise<any | null> {
+    if (typeof (this.storage as any).getCache === 'function') {
+      return await (this.storage as any).getCache(key);
+    }
+    return null;
+  }
+
+  async setCache(key: string, data: any, expireSeconds?: number): Promise<void> {
+    if (typeof (this.storage as any).setCache === 'function') {
+      await (this.storage as any).setCache(key, data, expireSeconds);
+    }
+  }
+
+  async deleteCache(key: string): Promise<void> {
+    if (typeof (this.storage as any).deleteCache === 'function') {
+      await (this.storage as any).deleteCache(key);
+    }
+  }
+
+  async clearExpiredCache(prefix?: string): Promise<void> {
+    if (typeof (this.storage as any).clearExpiredCache === 'function') {
+      await (this.storage as any).clearExpiredCache(prefix);
+    }
+  }
 }
 
 // 导出默认实例

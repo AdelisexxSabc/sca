@@ -22,6 +22,8 @@ const ACTIONS = [
   'userGroup',
   'updateUserGroups',
   'batchUpdateUserGroups',
+  'batchDeleteUsers',
+  'setTvboxToken',
 ] as const;
 
 export async function POST(request: NextRequest) {
@@ -59,7 +61,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 用户组操作和批量操作不需要targetUsername
-    if (!targetUsername && !['userGroup', 'batchUpdateUserGroups'].includes(action)) {
+    if (!targetUsername && !['userGroup', 'batchUpdateUserGroups', 'batchDeleteUsers'].includes(action)) {
       return NextResponse.json({ error: '缺少目标用户名' }, { status: 400 });
     }
 
@@ -70,6 +72,7 @@ export async function POST(request: NextRequest) {
       action !== 'userGroup' &&
       action !== 'updateUserGroups' &&
       action !== 'batchUpdateUserGroups' &&
+      action !== 'setTvboxToken' &&
       username === targetUsername
     ) {
       return NextResponse.json(
@@ -99,7 +102,7 @@ export async function POST(request: NextRequest) {
     let targetEntry: any = null;
     let isTargetAdmin = false;
 
-    if (!['userGroup', 'batchUpdateUserGroups'].includes(action) && targetUsername) {
+    if (!['userGroup', 'batchUpdateUserGroups', 'batchDeleteUsers'].includes(action) && targetUsername) {
       targetEntry = adminConfig.UserConfig.Users.find(
         (u) => u.username === targetUsername
       );
@@ -331,6 +334,38 @@ export async function POST(request: NextRequest) {
 
         break;
       }
+      case 'setTvboxToken': {
+        if (!targetEntry) {
+          return NextResponse.json(
+            { error: '目标用户不存在' },
+            { status: 404 }
+          );
+        }
+
+        const { tvboxToken } = body as { tvboxToken?: string | null };
+
+        // 权限检查：站长可配置所有人，管理员可配置普通用户和自己
+        if (
+          isTargetAdmin &&
+          operatorRole !== 'owner' &&
+          username !== targetUsername
+        ) {
+          return NextResponse.json(
+            { error: '仅站长可配置其他管理员的 TVBOX TOKEN' },
+            { status: 401 }
+          );
+        }
+
+        // 更新用户的 TVBOX TOKEN
+        if (tvboxToken && tvboxToken.trim()) {
+          targetEntry.tvboxToken = tvboxToken.trim();
+        } else {
+          // 如果为空，则删除该字段
+          delete targetEntry.tvboxToken;
+        }
+
+        break;
+      }
       case 'userGroup': {
         // 用户组管理操作
         const { groupAction, groupName, enabledApis } = body as {
@@ -449,6 +484,58 @@ export async function POST(request: NextRequest) {
               // 如果为空数组或未提供，则删除该字段，表示无用户组
               delete targetUser.tags;
             }
+          }
+        }
+
+        break;
+      }
+      case 'batchDeleteUsers': {
+        const { usernames } = body as { usernames: string[] };
+
+        if (!usernames || !Array.isArray(usernames) || usernames.length === 0) {
+          return NextResponse.json({ error: '缺少用户名列表' }, { status: 400 });
+        }
+
+        // 权限检查并过滤出可删除的用户
+        const deletableUsernames: string[] = [];
+        for (const targetUsername of usernames) {
+          // 不能删除自己
+          if (targetUsername === username) {
+            continue;
+          }
+
+          const targetUser = adminConfig.UserConfig.Users.find(u => u.username === targetUsername);
+          if (!targetUser) {
+            continue; // 用户不存在，跳过
+          }
+
+          // 不能删除站长
+          if (targetUser.role === 'owner') {
+            continue;
+          }
+
+          // 管理员不能删除其他管理员
+          if (targetUser.role === 'admin' && operatorRole !== 'owner') {
+            continue;
+          }
+
+          deletableUsernames.push(targetUsername);
+        }
+
+        if (deletableUsernames.length === 0) {
+          return NextResponse.json({ error: '没有可删除的用户' }, { status: 400 });
+        }
+
+        // 批量删除用户
+        for (const targetUsername of deletableUsernames) {
+          await db.deleteUser(targetUsername);
+
+          // 从配置中移除用户
+          const userIndex = adminConfig.UserConfig.Users.findIndex(
+            (u) => u.username === targetUsername
+          );
+          if (userIndex > -1) {
+            adminConfig.UserConfig.Users.splice(userIndex, 1);
           }
         }
 

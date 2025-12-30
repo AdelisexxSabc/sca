@@ -18,6 +18,8 @@ export interface AdminConfig {
     FluidSearch: boolean;
     openRegister?: boolean; // 是否开放注册
     defaultUserGroup?: string; // 新用户默认用户组
+    autoCleanInactiveUsers?: boolean; // 是否自动清理非活跃用户
+    inactiveUserDays?: number; // 非活跃用户天数阈值
   };
   UserConfig: {
     Users: {
@@ -26,6 +28,7 @@ export interface AdminConfig {
       banned?: boolean;
       enabledApis?: string[]; // 优先级高于tags限制
       tags?: string[]; // 多 tags 取并集限制
+      tvboxToken?: string; // TVBOX 访问 Token
     }[];
     Tags?: {
       name: string;

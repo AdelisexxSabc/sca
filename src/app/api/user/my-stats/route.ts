@@ -1,0 +1,137 @@
+/* eslint-disable @typescript-eslint/no-explicit-any,no-console */
+
+import { NextRequest, NextResponse } from 'next/server';
+
+import { getAuthInfoFromCookie } from '@/lib/auth';
+import { db } from '@/lib/db';
+
+export const runtime = 'nodejs';
+
+export async function GET(request: NextRequest) {
+  const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
+  if (storageType === 'localstorage') {
+    return NextResponse.json(
+      {
+        error: '不支持本地存储进行个人统计查看',
+      },
+      { status: 400 }
+    );
+  }
+
+  const authInfo = getAuthInfoFromCookie(request);
+  if (!authInfo || !authInfo.username) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const storage = db;
+    const username = authInfo.username;
+
+    // 设置项目开始时间
+    const PROJECT_START_DATE = new Date('2025-09-14').getTime();
+
+    // 从 UserMeta 获取用户创建时间
+    const userMeta = await storage.getUserMeta(username);
+    const userCreatedAt = userMeta?.createdAt || PROJECT_START_DATE;
+
+    // 使用自然日计算注册天数
+    const firstDate = new Date(userCreatedAt);
+    const currentDate = new Date();
+    const firstDay = new Date(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate());
+    const currentDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+    const registrationDays = Math.floor((currentDay.getTime() - firstDay.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+    // 从 UserMeta 获取用户登录统计
+    const loginCount = userMeta?.loginCount || 0;
+    const lastLoginTime = userMeta?.lastActiveAt || 0;
+    const firstLoginTime = userMeta?.createdAt || userCreatedAt;
+    const loginDays = 0; // 可以后续计算实际的登录天数
+
+    // 获取用户所有播放记录
+    const userPlayRecords = await storage.getAllPlayRecords(username);
+    const records = Object.values(userPlayRecords);
+
+    if (records.length === 0) {
+      return NextResponse.json({
+        username,
+        totalWatchTime: 0,
+        totalPlays: 0,
+        lastPlayTime: 0,
+        recentRecords: [],
+        avgWatchTime: 0,
+        mostWatchedSource: '',
+        registrationDays,
+        loginDays,
+        loginCount,
+        lastLoginTime: lastLoginTime || userCreatedAt,
+        firstLoginTime,
+        createdAt: userCreatedAt,
+        totalMovies: 0,
+      });
+    }
+
+    // 计算用户统计
+    let totalWatchTime = 0;
+    let lastPlayTime = 0;
+    const sourceCount: Record<string, number> = {};
+    const uniqueMovies = new Set<string>();
+
+    records.forEach((record) => {
+      totalWatchTime += record.play_time || 0;
+
+      if (record.save_time > lastPlayTime) {
+        lastPlayTime = record.save_time;
+      }
+
+      const sourceName = record.source_name || '未知来源';
+      sourceCount[sourceName] = (sourceCount[sourceName] || 0) + 1;
+
+      // 统计观看的不同影片
+      uniqueMovies.add(record.title);
+    });
+
+    // 获取最近播放记录
+    const recentRecords = records
+      .sort((a, b) => (b.save_time || 0) - (a.save_time || 0))
+      .slice(0, 10);
+
+    // 找出最常观看的来源
+    let mostWatchedSource = '';
+    let maxCount = 0;
+    for (const [source, count] of Object.entries(sourceCount)) {
+      if (count > maxCount) {
+        maxCount = count;
+        mostWatchedSource = source;
+      }
+    }
+
+    const result = {
+      username,
+      totalWatchTime,
+      totalPlays: records.length,
+      lastPlayTime,
+      recentRecords,
+      avgWatchTime: records.length > 0 ? totalWatchTime / records.length : 0,
+      mostWatchedSource,
+      registrationDays,
+      loginDays,
+      loginCount,
+      lastLoginTime: lastLoginTime || userCreatedAt,
+      firstLoginTime,
+      createdAt: userCreatedAt,
+      totalMovies: uniqueMovies.size,
+    };
+
+    return NextResponse.json(result, {
+      headers: {
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch (error) {
+    console.error('获取个人统计失败:', error);
+    return NextResponse.json(
+      { error: '获取个人统计失败' },
+      { status: 500 }
+    );
+  }
+}

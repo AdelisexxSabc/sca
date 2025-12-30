@@ -399,6 +399,13 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
   } | null>(null);
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
   const [deletingUser, setDeletingUser] = useState<string | null>(null);
+  const [showBatchDeleteUsersModal, setShowBatchDeleteUsersModal] = useState(false);
+  const [showTvboxTokenModal, setShowTvboxTokenModal] = useState(false);
+  const [selectedUserForToken, setSelectedUserForToken] = useState<{
+    username: string;
+    tvboxToken?: string;
+  } | null>(null);
+  const [tvboxTokenInput, setTvboxTokenInput] = useState('');
 
   // 当前登录用户名
   const currentUsername = getAuthInfoFromBrowserCookie()?.username || null;
@@ -597,6 +604,57 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
     setShowConfigureUserGroupModal(true);
   };
 
+  // TVBOX TOKEN 配置函数
+  const handleConfigureTvboxToken = (user: {
+    username: string;
+    tvboxToken?: string;
+  }) => {
+    setSelectedUserForToken(user);
+    setTvboxTokenInput(user.tvboxToken || '');
+    setShowTvboxTokenModal(true);
+  };
+
+  const handleGenerateTvboxToken = () => {
+    // 生成随机 token
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let token = '';
+    for (let i = 0; i < 32; i++) {
+      token += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setTvboxTokenInput(token);
+  };
+
+  const handleSaveTvboxToken = async () => {
+    if (!selectedUserForToken) return;
+
+    await withLoading(`saveTvboxToken_${selectedUserForToken.username}`, async () => {
+      try {
+        const res = await fetch('/api/admin/user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'setTvboxToken',
+            targetUsername: selectedUserForToken.username,
+            tvboxToken: tvboxTokenInput || null,
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `操作失败: ${res.status}`);
+        }
+
+        await refreshConfig();
+        setShowTvboxTokenModal(false);
+        setSelectedUserForToken(null);
+        setTvboxTokenInput('');
+        showSuccess('TVBOX TOKEN 设置成功', showAlert);
+      } catch (err) {
+        showError(err instanceof Error ? err.message : '操作失败', showAlert);
+      }
+    });
+  };
+
   const handleSaveUserGroups = async () => {
     if (!selectedUserForGroup) return;
 
@@ -676,6 +734,39 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
     });
   };
 
+  // 批量删除用户
+  const handleBatchDeleteUsers = async () => {
+    if (selectedUsers.size === 0) return;
+
+    await withLoading('batchDeleteUsers', async () => {
+      try {
+        const res = await fetch('/api/admin/user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'batchDeleteUsers',
+            usernames: Array.from(selectedUsers),
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `操作失败: ${res.status}`);
+        }
+
+        const userCount = selectedUsers.size;
+        setSelectedUsers(new Set());
+        setShowBatchDeleteUsersModal(false);
+        showSuccess(`已成功删除 ${userCount} 个用户`, showAlert);
+
+        // 刷新配置
+        await refreshConfig();
+      } catch (err) {
+        showError(err instanceof Error ? err.message : '批量删除用户失败', showAlert);
+        throw err;
+      }
+    });
+  };
 
 
   // 提取URL域名的辅助函数
@@ -783,6 +874,134 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
 
   return (
     <div className='space-y-6'>
+      {/* 注册设置 */}
+      <div>
+        <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300 mb-3'>
+          注册设置
+        </h4>
+        <div className='p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 space-y-4'>
+          {/* 允许用户注册开关 */}
+          <div className='flex items-center justify-between'>
+            <div>
+              <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                允许用户注册
+              </div>
+              <div className='text-xs text-gray-500 dark:text-gray-400'>
+                控制是否允许用户通过注册页面自行注册账户
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/admin/site', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'updateConfig',
+                      openRegister: !config.SiteConfig.openRegister,
+                    }),
+                  });
+                  if (!res.ok) throw new Error('操作失败');
+                  await refreshConfig();
+                  showSuccess(config.SiteConfig.openRegister ? '已关闭注册' : '已开启注册', showAlert);
+                } catch (err) {
+                  showError('操作失败', showAlert);
+                }
+              }}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                config.SiteConfig.openRegister ? buttonStyles.toggleOn : buttonStyles.toggleOff
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full ${buttonStyles.toggleThumb} transition-transform ${
+                  config.SiteConfig.openRegister ? buttonStyles.toggleThumbOn : buttonStyles.toggleThumbOff
+                }`}
+              />
+            </button>
+            <span className={`ml-2 text-sm font-medium ${config.SiteConfig.openRegister ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+              {config.SiteConfig.openRegister ? '开启' : '关闭'}
+            </span>
+          </div>
+
+          {/* 自动清理非活跃用户开关 */}
+          <div className='flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700'>
+            <div>
+              <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
+                自动清理非活跃用户
+              </div>
+              <div className='text-xs text-gray-500 dark:text-gray-400'>
+                自动删除指定天数内未登录的非活跃用户账号
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/admin/site', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'updateConfig',
+                      autoCleanInactiveUsers: !config.SiteConfig.autoCleanInactiveUsers,
+                    }),
+                  });
+                  if (!res.ok) throw new Error('操作失败');
+                  await refreshConfig();
+                  showSuccess(config.SiteConfig.autoCleanInactiveUsers ? '已关闭自动清理' : '已开启自动清理', showAlert);
+                } catch (err) {
+                  showError('操作失败', showAlert);
+                }
+              }}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                config.SiteConfig.autoCleanInactiveUsers ? buttonStyles.toggleOn : buttonStyles.toggleOff
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full ${buttonStyles.toggleThumb} transition-transform ${
+                  config.SiteConfig.autoCleanInactiveUsers ? buttonStyles.toggleThumbOn : buttonStyles.toggleThumbOff
+                }`}
+              />
+            </button>
+            <span className={`ml-2 text-sm font-medium ${config.SiteConfig.autoCleanInactiveUsers ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+              {config.SiteConfig.autoCleanInactiveUsers ? '开启' : '关闭'}
+            </span>
+          </div>
+
+          {/* 非活跃天数设置 */}
+          {config.SiteConfig.autoCleanInactiveUsers && (
+            <div className='flex items-center space-x-3 pl-4'>
+              <span className='text-sm text-gray-600 dark:text-gray-400'>保留天数：</span>
+              <input
+                type='number'
+                min={1}
+                max={365}
+                value={config.SiteConfig.inactiveUserDays || 7}
+                onChange={async (e) => {
+                  const days = Math.max(1, Math.min(365, parseInt(e.target.value) || 7));
+                  try {
+                    const res = await fetch('/api/admin/site', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        action: 'updateConfig',
+                        inactiveUserDays: days,
+                      }),
+                    });
+                    if (!res.ok) throw new Error('操作失败');
+                    await refreshConfig();
+                  } catch (err) {
+                    showError('设置失败', showAlert);
+                  }
+                }}
+                className='w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+              />
+              <span className='text-sm text-gray-500 dark:text-gray-400'>
+                天（超过此天数未登录的用户将被自动删除）
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 用户统计 */}
       <div>
         <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300 mb-3'>
@@ -899,6 +1118,12 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                     className={buttonStyles.primary}
                   >
                     批量设置用户组
+                  </button>
+                  <button
+                    onClick={() => setShowBatchDeleteUsersModal(true)}
+                    className={buttonStyles.danger}
+                  >
+                    批量删除
                   </button>
                 </div>
                 <div className='w-px h-6 bg-gray-300 dark:bg-gray-600'></div>
@@ -1081,6 +1306,12 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                 </th>
                 <th
                   scope='col'
+                  className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                >
+                  TVBOX TOKEN
+                </th>
+                <th
+                  scope='col'
                   className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
                 >
                   操作
@@ -1206,6 +1437,25 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                                   user.username === currentUsername))) && (
                                 <button
                                   onClick={() => handleConfigureUserApis(user)}
+                                  className={buttonStyles.roundedPrimary}
+                                >
+                                  配置
+                                </button>
+                              )}
+                          </div>
+                        </td>
+                        <td className='px-6 py-4 whitespace-nowrap'>
+                          <div className='flex items-center space-x-2'>
+                            <span className='text-sm text-gray-500 dark:text-gray-400 font-mono'>
+                              {user.tvboxToken ? user.tvboxToken.substring(0, 8) + '...' : '未设置'}
+                            </span>
+                            {/* 配置 TVBOX TOKEN 按钮 */}
+                            {(role === 'owner' ||
+                              (role === 'admin' &&
+                                (user.role === 'user' ||
+                                  user.username === currentUsername))) && (
+                                <button
+                                  onClick={() => handleConfigureTvboxToken(user)}
                                   className={buttonStyles.roundedPrimary}
                                 >
                                   配置
@@ -1756,6 +2006,100 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
         document.body
       )}
 
+      {/* 配置 TVBOX TOKEN 弹窗 */}
+      {showTvboxTokenModal && selectedUserForToken && createPortal(
+        <div className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4' onClick={() => {
+          setShowTvboxTokenModal(false);
+          setSelectedUserForToken(null);
+          setTvboxTokenInput('');
+        }}>
+          <div className='bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full' onClick={(e) => e.stopPropagation()}>
+            <div className='p-6'>
+              <div className='flex items-center justify-between mb-6'>
+                <h3 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
+                  配置 TVBOX TOKEN - {selectedUserForToken.username}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowTvboxTokenModal(false);
+                    setSelectedUserForToken(null);
+                    setTvboxTokenInput('');
+                  }}
+                  className='text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
+                >
+                  <svg className='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                    <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M6 18L18 6M6 6l12 12' />
+                  </svg>
+                </button>
+              </div>
+
+              <div className='mb-6'>
+                <div className='bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4'>
+                  <div className='flex items-center space-x-2 mb-2'>
+                    <svg className='w-5 h-5 text-blue-600 dark:text-blue-400' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' />
+                    </svg>
+                    <span className='text-sm font-medium text-blue-800 dark:text-blue-300'>
+                      配置说明
+                    </span>
+                  </div>
+                  <p className='text-sm text-blue-700 dark:text-blue-400 mt-1'>
+                    TVBOX TOKEN 用于 TVBOX 应用访问接口验证。设置后，用户可以使用此 Token 在 TVBOX 中访问资源。
+                  </p>
+                </div>
+              </div>
+
+              {/* TOKEN 输入框 */}
+              <div className='mb-6'>
+                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+                  TVBOX TOKEN：
+                </label>
+                <div className='flex space-x-2'>
+                  <input
+                    type='text'
+                    value={tvboxTokenInput}
+                    onChange={(e) => setTvboxTokenInput(e.target.value)}
+                    placeholder='输入或生成 Token'
+                    className='flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors'
+                  />
+                  <button
+                    onClick={handleGenerateTvboxToken}
+                    className={buttonStyles.primary}
+                  >
+                    生成
+                  </button>
+                </div>
+                <p className='mt-2 text-xs text-gray-500 dark:text-gray-400'>
+                  留空则清除 Token，用户将无法通过 TVBOX 访问
+                </p>
+              </div>
+
+              {/* 操作按钮 */}
+              <div className='flex justify-end space-x-3'>
+                <button
+                  onClick={() => {
+                    setShowTvboxTokenModal(false);
+                    setSelectedUserForToken(null);
+                    setTvboxTokenInput('');
+                  }}
+                  className={buttonStyles.secondary}
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSaveTvboxToken}
+                  disabled={isLoading(`saveTvboxToken_${selectedUserForToken?.username}`)}
+                  className={`${buttonStyles.success} ${isLoading(`saveTvboxToken_${selectedUserForToken?.username}`) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isLoading(`saveTvboxToken_${selectedUserForToken?.username}`) ? '保存中...' : '保存'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* 删除用户组确认弹窗 */}
       {showDeleteUserGroupModal && deletingUserGroup && createPortal(
         <div className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4' onClick={() => {
@@ -2000,6 +2344,83 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
                   className={`px-6 py-2.5 text-sm font-medium ${isLoading('batchSetUserGroup') ? buttonStyles.disabled : buttonStyles.primary}`}
                 >
                   {isLoading('batchSetUserGroup') ? '设置中...' : '确认设置'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 批量删除用户确认弹窗 */}
+      {showBatchDeleteUsersModal && createPortal(
+        <div className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4' onClick={() => {
+          setShowBatchDeleteUsersModal(false);
+        }}>
+          <div className='bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full' onClick={(e) => e.stopPropagation()}>
+            <div className='p-6'>
+              <div className='flex items-center justify-between mb-6'>
+                <h3 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
+                  确认批量删除用户
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowBatchDeleteUsersModal(false);
+                  }}
+                  className='text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
+                >
+                  <svg className='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                    <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M6 18L18 6M6 6l12 12' />
+                  </svg>
+                </button>
+              </div>
+
+              <div className='mb-6'>
+                <div className='bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-4'>
+                  <div className='flex items-center space-x-2 mb-2'>
+                    <svg className='w-5 h-5 text-red-600 dark:text-red-400' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                      <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z' />
+                    </svg>
+                    <span className='text-sm font-medium text-red-800 dark:text-red-300'>
+                      危险操作警告
+                    </span>
+                  </div>
+                  <p className='text-sm text-red-700 dark:text-red-400'>
+                    即将删除 <strong>{selectedUsers.size} 个用户</strong>，将同时删除其搜索历史、播放记录和收藏夹，此操作不可恢复！
+                  </p>
+                </div>
+
+                {/* 显示待删除的用户列表 */}
+                <div className='max-h-40 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3'>
+                  <div className='flex flex-wrap gap-2'>
+                    {Array.from(selectedUsers).map((username) => (
+                      <span
+                        key={username}
+                        className='px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-sm'
+                      >
+                        {username}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 操作按钮 */}
+              <div className='flex justify-end space-x-3'>
+                <button
+                  onClick={() => {
+                    setShowBatchDeleteUsersModal(false);
+                  }}
+                  className={`px-6 py-2.5 text-sm font-medium ${buttonStyles.secondary}`}
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleBatchDeleteUsers}
+                  disabled={isLoading('batchDeleteUsers')}
+                  className={`px-6 py-2.5 text-sm font-medium ${isLoading('batchDeleteUsers') ? buttonStyles.disabled : buttonStyles.danger}`}
+                >
+                  {isLoading('batchDeleteUsers') ? '删除中...' : '确认删除'}
                 </button>
               </div>
             </div>
@@ -3383,304 +3804,6 @@ const ConfigFileComponent = ({ config, refreshConfig }: { config: AdminConfig | 
   );
 };
 
-// 数据中心组件
-const DataCenterComponent = () => {
-  const { alertModal, showAlert, hideAlert } = useAlertModal();
-  const [stats, setStats] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [activeRanking, setActiveRanking] = useState<'daily' | 'weekly'>('daily');
-
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/admin/stats');
-      if (!response.ok) {
-        throw new Error('获取统计数据失败');
-      }
-      const data = await response.json();
-      setStats(data);
-    } catch (error) {
-      showAlert({
-        type: 'error',
-        title: '获取失败',
-        message: (error as Error).message,
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className='space-y-6'>
-        <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
-          {[1, 2, 3].map((i) => (
-            <div key={i} className='h-32 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse' />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className='space-y-6'>
-      <AlertModal
-        isOpen={alertModal.isOpen}
-        onClose={hideAlert}
-        type={alertModal.type}
-        title={alertModal.title}
-        message={alertModal.message}
-        timer={alertModal.timer}
-        showConfirm={alertModal.showConfirm}
-      />
-
-      {/* 用户维度统计 */}
-      <div>
-        <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4'>
-          用户统计
-        </h3>
-        <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
-          <div className='bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-lg p-6 border border-blue-200 dark:border-blue-800'>
-            <div className='flex items-center justify-between'>
-              <div>
-                <p className='text-sm text-blue-600 dark:text-blue-400 font-medium'>今日新增</p>
-                <p className='text-3xl font-bold text-blue-700 dark:text-blue-300 mt-2'>
-                  {stats?.users?.todayNew || 0}
-                </p>
-              </div>
-              <Users className='w-12 h-12 text-blue-400 dark:text-blue-600' />
-            </div>
-          </div>
-
-          <div className='bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 rounded-lg p-6 border border-green-200 dark:border-green-800'>
-            <div className='flex items-center justify-between'>
-              <div>
-                <p className='text-sm text-green-600 dark:text-green-400 font-medium'>累计用户</p>
-                <p className='text-3xl font-bold text-green-700 dark:text-green-300 mt-2'>
-                  {stats?.users?.total || 0}
-                </p>
-              </div>
-              <Database className='w-12 h-12 text-green-400 dark:text-green-600' />
-            </div>
-          </div>
-
-          <div className='bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 rounded-lg p-6 border border-purple-200 dark:border-purple-800'>
-            <div className='flex items-center justify-between'>
-              <div>
-                <p className='text-sm text-purple-600 dark:text-purple-400 font-medium'>今日活跃</p>
-                <p className='text-3xl font-bold text-purple-700 dark:text-purple-300 mt-2'>
-                  {stats?.users?.todayActive || 0}
-                </p>
-              </div>
-              <BarChart3 className='w-12 h-12 text-purple-400 dark:text-purple-600' />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 内容维度统计 */}
-      <div>
-        <div className='flex items-center justify-between mb-4'>
-          <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
-            热门影视播放排行
-          </h3>
-          <div className='flex gap-2'>
-            <button
-              onClick={() => setActiveRanking('daily')}
-              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                activeRanking === 'daily'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-              }`}
-            >
-              日榜
-            </button>
-            <button
-              onClick={() => setActiveRanking('weekly')}
-              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                activeRanking === 'weekly'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-              }`}
-            >
-              周榜
-            </button>
-          </div>
-        </div>
-
-        <div className='bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden'>
-          <div className='overflow-x-auto'>
-            <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
-              <thead className='bg-gray-50 dark:bg-gray-900'>
-                <tr>
-                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    排名
-                  </th>
-                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    影视名称
-                  </th>
-                  <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    来源
-                  </th>
-                  <th className='px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                    播放次数
-                  </th>
-                </tr>
-              </thead>
-              <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
-                {(activeRanking === 'daily' ? stats?.content?.dailyRanking : stats?.content?.weeklyRanking)?.map((item: any, index: number) => (
-                  <tr key={item.key} className='hover:bg-gray-50 dark:hover:bg-gray-700/50'>
-                    <td className='px-6 py-4 whitespace-nowrap'>
-                      <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
-                        index === 0 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200' :
-                        index === 1 ? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200' :
-                        index === 2 ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200' :
-                        'bg-blue-50 text-blue-800 dark:bg-blue-900/20 dark:text-blue-200'
-                      }`}>
-                        {index + 1}
-                      </span>
-                    </td>
-                    <td className='px-6 py-4'>
-                      <div className='text-sm font-medium text-gray-900 dark:text-gray-100'>
-                        {item.title}
-                      </div>
-                    </td>
-                    <td className='px-6 py-4 whitespace-nowrap'>
-                      <span className='px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'>
-                        {item.source_name}
-                      </span>
-                    </td>
-                    <td className='px-6 py-4 whitespace-nowrap text-right'>
-                      <span className='text-sm font-semibold text-gray-900 dark:text-gray-100'>
-                        {item.count}
-                      </span>
-                    </td>
-                  </tr>
-                )) || (
-                  <tr>
-                    <td colSpan={4} className='px-6 py-8 text-center text-gray-500 dark:text-gray-400'>
-                      暂无数据
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* 搜索热词统计 */}
-      <div>
-        <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4'>
-          搜索热词
-        </h3>
-        <div className='bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6'>
-          <div className='flex flex-wrap gap-2'>
-            {stats?.content?.searchRanking?.map((item: any, index: number) => (
-              <div
-                key={item.keyword}
-                className='inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-800'
-              >
-                <span className='text-xs font-bold text-blue-600 dark:text-blue-400'>
-                  #{index + 1}
-                </span>
-                <span className='text-sm font-medium text-gray-900 dark:text-gray-100'>
-                  {item.keyword}
-                </span>
-                <span className='text-xs text-gray-500 dark:text-gray-400'>
-                  ({item.count})
-                </span>
-              </div>
-            )) || (
-              <p className='text-gray-500 dark:text-gray-400'>暂无搜索记录</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 系统维度统计 */}
-      <div>
-        <h3 className='text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4'>
-          系统状态
-        </h3>
-        <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-          <div className='bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6'>
-            <p className='text-sm text-gray-600 dark:text-gray-400 mb-2'>实时在线人数</p>
-            <p className='text-2xl font-bold text-gray-900 dark:text-gray-100'>
-              {stats?.system?.onlineUsers || 0} 人
-            </p>
-            <p className='text-xs text-gray-500 dark:text-gray-400 mt-2'>
-              最近30分钟内活跃的用户
-            </p>
-          </div>
-
-          <div className='bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6'>
-            <p className='text-sm text-gray-600 dark:text-gray-400 mb-2'>API调用成功率</p>
-            <div className='flex items-center gap-3'>
-              <p className='text-2xl font-bold text-green-600 dark:text-green-400'>
-                {stats?.system?.sourceStats?.successRate || '0'}%
-              </p>
-              <div className='flex-1'>
-                <p className='text-xs text-gray-500 dark:text-gray-400'>
-                  成功: {stats?.system?.sourceStats?.success || 0} / 总计: {stats?.system?.sourceStats?.total || 0}
-                </p>
-                <p className='text-xs text-gray-500 dark:text-gray-400'>
-                  平均响应: {stats?.system?.sourceStats?.avgResponseTime || 0}ms
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* API源详细统计 */}
-        {stats?.system?.sourceStats?.bySource && Object.keys(stats.system.sourceStats.bySource).length > 0 && (
-          <div className='mt-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6'>
-            <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300 mb-4'>
-              各源调用统计
-            </h4>
-            <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3'>
-              {Object.entries(stats.system.sourceStats.bySource).map(([source, data]: [string, any]) => (
-                <div
-                  key={source}
-                  className='bg-gray-50 dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-700'
-                >
-                  <p className='text-sm font-medium text-gray-900 dark:text-gray-100 mb-2 truncate'>
-                    {source}
-                  </p>
-                  <div className='flex items-center justify-between'>
-                    <span className='text-xs text-gray-600 dark:text-gray-400'>
-                      成功率
-                    </span>
-                    <span className={`text-sm font-bold ${
-                      data.successRate >= 90 ? 'text-green-600 dark:text-green-400' :
-                      data.successRate >= 70 ? 'text-yellow-600 dark:text-yellow-400' :
-                      'text-red-600 dark:text-red-400'
-                    }`}>
-                      {data.successRate.toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className='flex items-center justify-between mt-1'>
-                    <span className='text-xs text-gray-600 dark:text-gray-400'>
-                      调用次数
-                    </span>
-                    <span className='text-sm text-gray-900 dark:text-gray-100'>
-                      {data.total}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 // 新增站点配置组件
 const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | null; refreshConfig: () => Promise<void> }) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
@@ -4810,7 +4933,6 @@ function AdminPageClient() {
     categoryConfig: false,
     configFile: false,
     dataMigration: false,
-    dataCenter: false,
   });
 
   // 获取管理员配置
@@ -4953,21 +5075,6 @@ function AdminPageClient() {
             onToggle={() => toggleTab('siteConfig')}
           >
             <SiteConfigComponent config={config} refreshConfig={fetchConfig} />
-          </CollapsibleTab>
-
-          {/* 数据中心标签 */}
-          <CollapsibleTab
-            title='数据中心'
-            icon={
-              <BarChart3
-                size={20}
-                className='text-gray-600 dark:text-gray-400'
-              />
-            }
-            isExpanded={expandedTabs.dataCenter}
-            onToggle={() => toggleTab('dataCenter')}
-          >
-            <DataCenterComponent />
           </CollapsibleTab>
 
           {/* 广告管理按钮 */}
