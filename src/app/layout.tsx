@@ -55,6 +55,7 @@ export default async function RootLayout({
   let disableYellowFilter =
     process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true';
   let fluidSearch = process.env.NEXT_PUBLIC_FLUID_SEARCH !== 'false';
+  let siteIcon = ''; // 自定义网站图标
   let customCategories = [] as {
     name: string;
     type: 'movie' | 'tv';
@@ -64,6 +65,7 @@ export default async function RootLayout({
     const config = await getConfig();
     siteName = config.SiteConfig.SiteName;
     announcement = config.SiteConfig.Announcement;
+    siteIcon = config.SiteConfig.SiteIcon || '';
 
     doubanProxyType = config.SiteConfig.DoubanProxyType;
     doubanProxy = config.SiteConfig.DoubanProxy;
@@ -99,7 +101,9 @@ export default async function RootLayout({
           name='viewport'
           content='width=device-width, initial-scale=1.0, viewport-fit=cover'
         />
-        <link rel='apple-touch-icon' href='/icons/icon-192x192.png' />
+        {/* 网站图标 - 优先使用自定义图标 */}
+        <link rel='icon' href={siteIcon || '/icons/icon-192x192.png'} />
+        <link rel='apple-touch-icon' href={siteIcon || '/icons/icon-192x192.png'} />
         {/* 将配置序列化后直接写入脚本，浏览器端可通过 window.RUNTIME_CONFIG 获取 */}
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script

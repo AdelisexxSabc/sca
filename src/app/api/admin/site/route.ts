@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
       defaultUserGroup,
       autoCleanInactiveUsers,
       inactiveUserDays,
+      SiteIcon,
     } = body as {
       SiteName: string;
       Announcement: string;
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest) {
       defaultUserGroup?: string;
       autoCleanInactiveUsers?: boolean;
       inactiveUserDays?: number;
+      SiteIcon?: string;
     };
 
     // 参数校验
@@ -136,6 +138,7 @@ export async function POST(request: NextRequest) {
       defaultUserGroup: defaultUserGroup || '',
       autoCleanInactiveUsers: autoCleanInactiveUsers || false,
       inactiveUserDays: inactiveUserDays || 7,
+      SiteIcon: SiteIcon || '',
     };
 
     // 写入数据库

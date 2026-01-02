@@ -7,6 +7,7 @@ export interface AdminConfig {
   ConfigFile: string;
   SiteConfig: {
     SiteName: string;
+    SiteIcon?: string; // 自定义网站图标 URL
     Announcement: string;
     SearchDownstreamMaxPage: number;
     SiteInterfaceCacheTime: number;

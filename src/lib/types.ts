@@ -175,6 +175,8 @@ export interface DoubanItem {
   rate: string;
   year: string;
   plot_summary?: string; // 剧情简介（可选）
+  backdrop?: string; // 背景图（可选，从详情获取）
+  trailerUrl?: string; // 预告片URL（可选，从详情获取）
 }
 
 export interface DoubanResult {

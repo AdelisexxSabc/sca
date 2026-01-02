@@ -39,8 +39,8 @@ import {
   Users,
   Video,
 } from 'lucide-react';
-import { GripVertical } from 'lucide-react';
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { GripVertical, Upload, Trash2, Image as ImageIcon } from 'lucide-react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
@@ -261,6 +261,7 @@ const useLoadingState = () => {
 // 新增站点配置类型
 interface SiteConfig {
   SiteName: string;
+  SiteIcon: string; // 自定义网站图标 URL
   Announcement: string;
   SearchDownstreamMaxPage: number;
   SiteInterfaceCacheTime: number;
@@ -997,6 +998,54 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
               <span className='text-sm text-gray-500 dark:text-gray-400'>
                 天（超过此天数未登录的用户将被自动删除）
               </span>
+            </div>
+          )}
+
+          {/* 手动清理按钮 */}
+          {config.SiteConfig.autoCleanInactiveUsers && (
+            <div className='flex items-center space-x-3 pl-4 pt-3'>
+              <button
+                onClick={async () => {
+                  if (!confirm('确定要执行清理吗？\n\n此操作将：\n1. 为从未登录的用户初始化缓冲期\n2. 删除超过保留天数未登录的用户')) return;
+                  try {
+                    const res = await fetch('/api/admin/cleanup-users', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ mode: 'init' }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || '操作失败');
+                    await refreshConfig();
+                    showSuccess(data.message, showAlert);
+                  } catch (err) {
+                    showError('清理失败', showAlert);
+                  }
+                }}
+                className='px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors'
+              >
+                清理（带缓冲期）
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm('⚠️ 警告：强制清理！\n\n此操作将立即删除所有从未登录和超时的用户，不提供缓冲期！\n\n确定要继续吗？')) return;
+                  try {
+                    const res = await fetch('/api/admin/cleanup-users', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ mode: 'force' }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || '操作失败');
+                    await refreshConfig();
+                    showSuccess(data.message, showAlert);
+                  } catch (err) {
+                    showError('清理失败', showAlert);
+                  }
+                }}
+                className='px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors'
+              >
+                强制立即清理
+              </button>
             </div>
           )}
         </div>
@@ -3810,6 +3859,7 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
   const { isLoading, withLoading } = useLoadingState();
   const [siteSettings, setSiteSettings] = useState<SiteConfig>({
     SiteName: '',
+    SiteIcon: '',
     Announcement: '',
     SearchDownstreamMaxPage: 1,
     SiteInterfaceCacheTime: 7200,
@@ -3822,6 +3872,10 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     openRegister: false,
     defaultUserGroup: '',
   });
+  
+  // 图标上传状态
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const iconInputRef = React.useRef<HTMLInputElement>(null);
 
   // 豆瓣数据源相关状态
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
@@ -3857,6 +3911,7 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
     if (config?.SiteConfig) {
       setSiteSettings({
         ...config.SiteConfig,
+        SiteIcon: config.SiteConfig.SiteIcon || '',
         DoubanProxyType: config.SiteConfig.DoubanProxyType || 'cmliussss-cdn-tencent',
         DoubanProxy: config.SiteConfig.DoubanProxy || '',
         DoubanImageProxyType:
@@ -3869,6 +3924,82 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
       });
     }
   }, [config]);
+  
+  // 处理图标上传
+  const handleIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsUploadingIcon(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await fetch('/api/admin/upload-icon', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      const result = await response.json();
+      if (result.code === 200) {
+        const newIconUrl = result.data.url;
+        setSiteSettings(prev => ({ ...prev, SiteIcon: newIconUrl }));
+        
+        // 自动保存配置
+        const saveResp = await fetch('/api/admin/site', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...siteSettings, SiteIcon: newIconUrl }),
+        });
+        
+        if (saveResp.ok) {
+          showAlert({ type: 'success', title: '成功', message: '图标上传成功，请刷新页面查看效果', timer: 3000 });
+          await refreshConfig();
+        } else {
+          showAlert({ type: 'warning', title: '提示', message: '图标上传成功，但保存配置失败，请手动点击保存按钮', showConfirm: true });
+        }
+      } else {
+        showAlert({ type: 'error', title: '错误', message: result.message || '上传失败', showConfirm: true });
+      }
+    } catch (error) {
+      showAlert({ type: 'error', title: '错误', message: '上传失败: ' + (error as Error).message, showConfirm: true });
+    } finally {
+      setIsUploadingIcon(false);
+      if (iconInputRef.current) {
+        iconInputRef.current.value = '';
+      }
+    }
+  };
+  
+  // 删除自定义图标
+  const handleDeleteIcon = async () => {
+    try {
+      const response = await fetch('/api/admin/upload-icon', {
+        method: 'DELETE',
+      });
+      
+      const result = await response.json();
+      if (result.code === 200) {
+        setSiteSettings(prev => ({ ...prev, SiteIcon: '' }));
+        
+        // 自动保存配置
+        const saveResp = await fetch('/api/admin/site', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...siteSettings, SiteIcon: '' }),
+        });
+        
+        if (saveResp.ok) {
+          showAlert({ type: 'success', title: '成功', message: '已恢复默认图标，请刷新页面查看效果', timer: 3000 });
+          await refreshConfig();
+        } else {
+          showAlert({ type: 'success', title: '成功', message: '已恢复默认图标', timer: 2000 });
+        }
+      }
+    } catch (error) {
+      showAlert({ type: 'error', title: '错误', message: '删除失败: ' + (error as Error).message, showConfirm: true });
+    }
+  };
 
   // 点击外部区域关闭下拉框
   useEffect(() => {
@@ -3970,6 +4101,65 @@ const SiteConfigComponent = ({ config, refreshConfig }: { config: AdminConfig | 
           }
           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent"
         />
+      </div>
+
+      {/* 网站图标 */}
+      <div>
+        <label
+          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+        >
+          网站图标
+        </label>
+        <div className="flex items-center gap-4">
+          {/* 图标预览 */}
+          <div className="relative w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center overflow-hidden bg-gray-50 dark:bg-gray-800">
+            {siteSettings.SiteIcon ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={siteSettings.SiteIcon}
+                alt="网站图标"
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <ImageIcon className="w-8 h-8 text-gray-400" />
+            )}
+          </div>
+          
+          {/* 上传按钮 */}
+          <div className="flex flex-col gap-2">
+            <input
+              ref={iconInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml,image/x-icon"
+              onChange={handleIconUpload}
+              className="hidden"
+              id="icon-upload"
+            />
+            <label
+              htmlFor="icon-upload"
+              className={`${buttonStyles.primary} cursor-pointer inline-flex items-center gap-2 ${isUploadingIcon ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <Upload className="w-4 h-4" />
+              {isUploadingIcon ? '上传中...' : '上传图标'}
+            </label>
+            {siteSettings.SiteIcon && (
+              <button
+                type="button"
+                onClick={handleDeleteIcon}
+                className={`${buttonStyles.danger} inline-flex items-center gap-2`}
+              >
+                <Trash2 className="w-4 h-4" />
+                恢复默认
+              </button>
+            )}
+          </div>
+          
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            <p>支持 PNG、JPG、WebP、SVG、ICO 格式</p>
+            <p>建议尺寸：512x512 像素</p>
+            <p>最大 2MB</p>
+          </div>
+        </div>
       </div>
 
       {/* 站点公告 */}

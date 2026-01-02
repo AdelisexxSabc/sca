@@ -74,8 +74,19 @@ async function cleanInactiveUsers() {
       const userMeta = await db.getUserMeta(user.username);
       const lastActiveAt = userMeta?.lastActiveAt || userMeta?.createdAt || 0;
       
+      // 如果用户没有活跃记录，为其初始化元数据（给予缓冲期）
+      if (lastActiveAt === 0) {
+        const now = Date.now();
+        await db.setUserMeta(user.username, {
+          createdAt: now,
+          lastActiveAt: now,
+        });
+        console.log(`为用户 ${user.username} 初始化活跃记录，开始计算缓冲期`);
+        continue; // 跳过本次清理，下次再检查
+      }
+      
       // 如果用户最后活跃时间超过阈值，标记为删除
-      if (lastActiveAt > 0 && lastActiveAt < cutoffTime) {
+      if (lastActiveAt < cutoffTime) {
         usersToRemove.push(user.username);
       }
     }

@@ -477,3 +477,78 @@ async function fetchDoubanRecommends(
     throw new Error(`获取豆瓣推荐数据失败: ${(error as Error).message}`);
   }
 }
+
+// 豆瓣详情返回类型
+export interface DoubanDetailsResult {
+  code: number;
+  message: string;
+  data: {
+    id: string;
+    title: string;
+    poster: string;
+    rate: string;
+    year: string;
+    plot_summary: string;
+    backdrop: string;
+    trailerUrl: string;
+  } | null;
+}
+
+/**
+ * 获取豆瓣条目详情（包括预告片和高清背景图）
+ * 调用 /api/douban/details 接口
+ */
+export async function getDoubanDetails(
+  id: string
+): Promise<DoubanDetailsResult> {
+  try {
+    const response = await fetch(`/api/douban/details?id=${id}`, {
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error(`获取豆瓣详情失败: ${(error as Error).message}`);
+    return {
+      code: 500,
+      message: `获取豆瓣详情失败: ${(error as Error).message}`,
+      data: null,
+    };
+  }
+}
+
+/**
+ * 刷新豆瓣预告片URL（当预告片过期时调用）
+ * 调用 /api/douban/refresh-trailer 接口
+ */
+export async function refreshDoubanTrailer(
+  id: string
+): Promise<{ trailerUrl: string } | null> {
+  try {
+    const response = await fetch(`/api/douban/refresh-trailer?id=${id}`, {
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const result = await response.json();
+    if (result.code === 200 && result.trailerUrl) {
+      return { trailerUrl: result.trailerUrl };
+    }
+    return null;
+  } catch (error) {
+    console.error(`刷新豆瓣预告片失败: ${(error as Error).message}`);
+    return null;
+  }
+}

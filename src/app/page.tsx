@@ -18,13 +18,13 @@ import {
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { getDoubanCategories } from '@/lib/douban.client';
+import { getDoubanCategories, getDoubanDetails } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
 
 import AdDisplay from '@/components/AdDisplay';
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
-import HeroBanner from '@/components/HeroBanner';
+import HeroBanner from '@/components/HeroBannerNew';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useSite } from '@/components/SiteProvider';
@@ -36,6 +36,12 @@ function HomeClient() {
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
+  // 带详情的 Banner 数据（包含 backdrop 和 trailerUrl）
+  const [bannerDetailsMap, setBannerDetailsMap] = useState<Record<string, {
+    backdrop?: string;
+    trailerUrl?: string;
+    plot_summary?: string;
+  }>>({});
   const [bangumiCalendarData, setBangumiCalendarData] = useState<
     BangumiCalendarData[]
   >([]);
@@ -131,6 +137,51 @@ function HomeClient() {
 
     fetchRecommendData();
   }, []);
+
+  // 异步获取 Banner 项的详情（backdrop、trailerUrl、plot_summary）
+  useEffect(() => {
+    if (loading) return;
+    
+    // 收集需要获取详情的 ID
+    const bannerItems: { id: string; type: string }[] = [
+      ...hotMovies.slice(0, 2).map((m) => ({ id: m.id, type: 'movie' })),
+      ...hotTvShows.slice(0, 2).map((s) => ({ id: s.id, type: 'tv' })),
+      ...hotVarietyShows.slice(0, 2).map((s) => ({ id: s.id, type: 'variety' })),
+    ];
+
+    if (bannerItems.length === 0) return;
+
+    // 使用 requestIdleCallback 在浏览器空闲时获取详情
+    const fetchDetails = async () => {
+      for (const item of bannerItems) {
+        // 如果已经有详情，跳过
+        if (bannerDetailsMap[item.id]) continue;
+
+        try {
+          const result = await getDoubanDetails(item.id);
+          if (result.code === 200 && result.data) {
+            setBannerDetailsMap((prev) => ({
+              ...prev,
+              [item.id]: {
+                backdrop: result.data?.backdrop,
+                trailerUrl: result.data?.trailerUrl,
+                plot_summary: result.data?.plot_summary,
+              },
+            }));
+          }
+        } catch (error) {
+          console.error(`获取 ${item.id} 详情失败:`, error);
+        }
+      }
+    };
+
+    // 使用 requestIdleCallback 或 setTimeout 作为降级
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(() => fetchDetails());
+    } else {
+      setTimeout(fetchDetails, 100);
+    }
+  }, [loading, hotMovies, hotTvShows, hotVarietyShows]);
 
   // 处理收藏数据更新的函数
   const updateFavoriteItems = async (allFavorites: Record<string, any>) => {
@@ -254,13 +305,67 @@ function HomeClient() {
                 showCloseButton={true}
               />
 
-              {/* 热播轮播 */}
-              <HeroBanner
-                hotMovies={hotMovies}
-                hotTvShows={hotTvShows}
-                hotVarietyShows={hotVarietyShows}
-                loading={loading}
-              />
+              {/* 热播轮播 - Netflix风格 */}
+              {!loading && (hotMovies.length > 0 || hotTvShows.length > 0 || hotVarietyShows.length > 0) && (
+                <section className='mb-8'>
+                  <HeroBanner
+                    items={[
+                      // 热门电影
+                      ...hotMovies.slice(0, 2).map((movie) => {
+                        const details = bannerDetailsMap[movie.id];
+                        return {
+                          id: movie.id,
+                          title: movie.title,
+                          poster: movie.poster,
+                          backdrop: details?.backdrop || movie.backdrop,
+                          trailerUrl: details?.trailerUrl || movie.trailerUrl,
+                          description: details?.plot_summary || movie.plot_summary,
+                          year: movie.year,
+                          rate: movie.rate,
+                          douban_id: Number(movie.id),
+                          type: 'movie',
+                        };
+                      }),
+                      // 热门电视剧
+                      ...hotTvShows.slice(0, 2).map((show) => {
+                        const details = bannerDetailsMap[show.id];
+                        return {
+                          id: show.id,
+                          title: show.title,
+                          poster: show.poster,
+                          backdrop: details?.backdrop || show.backdrop,
+                          trailerUrl: details?.trailerUrl || show.trailerUrl,
+                          description: details?.plot_summary || show.plot_summary,
+                          year: show.year,
+                          rate: show.rate,
+                          douban_id: Number(show.id),
+                          type: 'tv',
+                        };
+                      }),
+                      // 热门综艺
+                      ...hotVarietyShows.slice(0, 2).map((show) => {
+                        const details = bannerDetailsMap[show.id];
+                        return {
+                          id: show.id,
+                          title: show.title,
+                          poster: show.poster,
+                          backdrop: details?.backdrop || show.backdrop,
+                          trailerUrl: details?.trailerUrl || show.trailerUrl,
+                          description: details?.plot_summary || show.plot_summary,
+                          year: show.year,
+                          rate: show.rate,
+                          douban_id: Number(show.id),
+                          type: 'variety',
+                        };
+                      }),
+                    ]}
+                    autoPlayInterval={8000}
+                    showControls={true}
+                    showIndicators={true}
+                    enableVideo={true}
+                  />
+                </section>
+              )}
 
               {/* 继续观看 */}
               <div ref={continueWatchingRef}>
