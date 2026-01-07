@@ -138,6 +138,29 @@ export async function POST(req: NextRequest) {
       username === process.env.USERNAME &&
       password === process.env.PASSWORD
     ) {
+      // 更新站长的登入统计
+      try {
+        const meta = await db.getUserMeta(username);
+        const now = Date.now();
+        await db.setUserMeta(username, {
+          createdAt: meta?.createdAt || now,
+          lastActiveAt: now,
+          loginCount: (meta?.loginCount || 0) + 1,
+          firstLoginTime: meta?.firstLoginTime || now
+        });
+      } catch (err) {
+        console.error('更新站长元数据失败:', err);
+      }
+
+      // 更新独立的登入统计
+      try {
+        const loginStats = await db.getUserLoginStats(username);
+        const isFirstLogin = !loginStats || loginStats.loginCount === 0;
+        await db.updateUserLoginStats(username, Date.now(), isFirstLogin);
+      } catch (err) {
+        console.error('更新站长登入统计失败:', err);
+      }
+
       // 验证成功，设置认证cookie
       const response = NextResponse.json({ ok: true });
       const cookieValue = await generateAuthCookie(
